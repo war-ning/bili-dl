@@ -106,4 +106,10 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except Exception as e:
+        import traceback
+        print(f"\n程序出错: {e}")
+        traceback.print_exc()
+        input("\n按回车键退出...")  # 防止 exe 闪退
