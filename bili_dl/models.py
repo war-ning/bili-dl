@@ -59,6 +59,7 @@ class DownloadTask:
     download_type: DownloadType
     quality: int = 80
     cover_fill_mode: Optional[CoverFillMode] = None
+    merge_pages: bool = False  # 多分P时是否合并为一个文件
     status: DownloadStatus = DownloadStatus.PENDING
     progress: float = 0.0
     file_path: str = ""

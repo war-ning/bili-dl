@@ -115,6 +115,24 @@ def configure_download(
                 (v.bvid, dt.value) for v, dt, _ in duplicate_tasks
             }
 
+    # 多分P处理方式（仅视频/音频类型需要）
+    merge_pages = False
+    has_av_types = any(
+        dt in (DownloadType.VIDEO, DownloadType.AUDIO, DownloadType.AUDIO_FAST)
+        for dt in selected_types
+    )
+    if has_av_types:
+        page_action = questionary.select(
+            "多分P视频如何处理?",
+            choices=[
+                questionary.Choice("每P单独保存", value="separate"),
+                questionary.Choice("合并为一个文件", value="merge"),
+            ],
+        ).ask()
+        if page_action is None:
+            return "back"
+        merge_pages = page_action == "merge"
+
     # 构建任务列表
     tasks: list[DownloadTask] = []
     for video in videos:
@@ -130,6 +148,7 @@ def configure_download(
                 download_type=dt,
                 quality=config.preferred_quality,
                 cover_fill_mode=cover_fill_mode,
+                merge_pages=merge_pages,
             ))
 
     if not tasks:

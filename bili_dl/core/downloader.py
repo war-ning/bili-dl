@@ -251,31 +251,63 @@ class BatchDownloader:
             output_path = self._build_path(vi, ".mp4")
             await self._download_single_video(task, vi, cid, output_path, on_progress, 0.0, 1.0, is_single=True)
         else:
-            # 多P：逐P下载，分别保存
-            output_paths = []
+            # 多P：逐P下载
+            part_paths: list[Path] = []
             try:
+                # 合并模式下载到临时目录，分开模式直接下载到目标目录
                 for idx, page in enumerate(pages):
                     cid = page["cid"]
                     part_name = page.get("part", f"P{page['page']}")
                     suffix = f"P{page['page']}_{part_name}"
-                    output_path = self._build_path(vi, ".mp4", suffix=suffix)
 
-                    p_start = idx / len(pages)
-                    p_end = (idx + 1) / len(pages)
-                    await self._download_single_video(task, vi, cid, output_path, on_progress, p_start, p_end, is_single=False)
-                    output_paths.append(str(output_path))
+                    if task.merge_pages:
+                        temp_dir = self._download_dir / ".tmp" / f"{vi.bvid}_merge"
+                        temp_dir.mkdir(parents=True, exist_ok=True)
+                        part_path = temp_dir / f"P{page['page']}.mp4"
+                    else:
+                        part_path = self._build_path(vi, ".mp4", suffix=suffix)
+
+                    p_start = idx / len(pages) * 0.9  # 留 10% 给合并
+                    p_end = (idx + 1) / len(pages) * 0.9
+                    await self._download_single_video(task, vi, cid, part_path, on_progress, p_start, p_end, is_single=False)
+                    part_paths.append(part_path)
             except Exception:
-                # 部分分P已下载，记录已完成的路径
-                if output_paths:
-                    task.file_path = "; ".join(output_paths)
-                    task.error_msg = f"分P {len(output_paths)+1}/{len(pages)} 下载失败，已完成 {len(output_paths)} 个"
+                if part_paths and not task.merge_pages:
+                    task.file_path = "; ".join(str(p) for p in part_paths)
+                    task.error_msg = f"分P {len(part_paths)+1}/{len(pages)} 下载失败，已完成 {len(part_paths)} 个"
                 raise
 
-            task.status = DownloadStatus.COMPLETED
-            task.file_path = "; ".join(output_paths)
-            task.file_size = sum(Path(p).stat().st_size for p in output_paths if Path(p).exists())
-            task.progress = 1.0
-            task.error_msg = f"共 {len(pages)} 个分P"
+            if task.merge_pages:
+                # 合并所有分P为一个文件
+                task.progress = 0.9
+                if on_progress:
+                    on_progress(task)
+                merged_path = self._build_path(vi, ".mp4")
+                await asyncio.to_thread(
+                    self._merger.concat_videos, part_paths, merged_path
+                )
+                set_file_mtime(merged_path, vi.publish_time)
+                # 清理分P临时文件
+                for p in part_paths:
+                    p.unlink(missing_ok=True)
+                temp_dir = self._download_dir / ".tmp" / f"{vi.bvid}_merge"
+                if temp_dir.exists():
+                    try:
+                        temp_dir.rmdir()
+                    except OSError:
+                        pass
+
+                task.status = DownloadStatus.COMPLETED
+                task.file_path = str(merged_path)
+                task.file_size = merged_path.stat().st_size
+                task.progress = 1.0
+                task.error_msg = f"共 {len(pages)} 个分P (已合并)"
+            else:
+                task.status = DownloadStatus.COMPLETED
+                task.file_path = "; ".join(str(p) for p in part_paths)
+                task.file_size = sum(p.stat().st_size for p in part_paths if p.exists())
+                task.progress = 1.0
+                task.error_msg = f"共 {len(pages)} 个分P"
 
     async def _download_single_video(
         self,
@@ -397,30 +429,61 @@ class BatchDownloader:
             output_path = self._build_path(vi, target_ext)
             await self._download_single_audio(task, vi, cid, output_path, on_progress, convert_mp3, 0.0, 1.0, is_single=True)
         else:
-            output_paths = []
+            target_ext = ".mp3" if convert_mp3 else ".m4a"
+            part_paths: list[Path] = []
             try:
                 for idx, page in enumerate(pages):
                     cid = page["cid"]
                     part_name = page.get("part", f"P{page['page']}")
                     suffix = f"P{page['page']}_{part_name}"
-                    target_ext = ".mp3" if convert_mp3 else ".m4a"
-                    output_path = self._build_path(vi, target_ext, suffix=suffix)
 
-                    p_start = idx / len(pages)
-                    p_end = (idx + 1) / len(pages)
-                    await self._download_single_audio(task, vi, cid, output_path, on_progress, convert_mp3, p_start, p_end, is_single=False)
-                    output_paths.append(str(output_path))
+                    if task.merge_pages:
+                        temp_dir = self._download_dir / ".tmp" / f"{vi.bvid}_merge_audio"
+                        temp_dir.mkdir(parents=True, exist_ok=True)
+                        part_path = temp_dir / f"P{page['page']}{target_ext}"
+                    else:
+                        part_path = self._build_path(vi, target_ext, suffix=suffix)
+
+                    p_start = idx / len(pages) * 0.9
+                    p_end = (idx + 1) / len(pages) * 0.9
+                    await self._download_single_audio(task, vi, cid, part_path, on_progress, convert_mp3, p_start, p_end, is_single=False)
+                    part_paths.append(part_path)
             except Exception:
-                if output_paths:
-                    task.file_path = "; ".join(output_paths)
-                    task.error_msg = f"分P {len(output_paths)+1}/{len(pages)} 下载失败，已完成 {len(output_paths)} 个"
+                if part_paths and not task.merge_pages:
+                    task.file_path = "; ".join(str(p) for p in part_paths)
+                    task.error_msg = f"分P {len(part_paths)+1}/{len(pages)} 下载失败，已完成 {len(part_paths)} 个"
                 raise
 
-            task.status = DownloadStatus.COMPLETED
-            task.file_path = "; ".join(output_paths)
-            task.file_size = sum(Path(p).stat().st_size for p in output_paths if Path(p).exists())
-            task.progress = 1.0
-            task.error_msg = f"共 {len(pages)} 个分P"
+            if task.merge_pages:
+                task.progress = 0.9
+                if on_progress:
+                    on_progress(task)
+                merged_path = self._build_path(vi, target_ext)
+                fmt = "mp3" if convert_mp3 else "ipod"
+                await asyncio.to_thread(
+                    self._merger.concat_audios, part_paths, merged_path, fmt
+                )
+                set_file_mtime(merged_path, vi.publish_time)
+                for p in part_paths:
+                    p.unlink(missing_ok=True)
+                temp_dir = self._download_dir / ".tmp" / f"{vi.bvid}_merge_audio"
+                if temp_dir.exists():
+                    try:
+                        temp_dir.rmdir()
+                    except OSError:
+                        pass
+
+                task.status = DownloadStatus.COMPLETED
+                task.file_path = str(merged_path)
+                task.file_size = merged_path.stat().st_size
+                task.progress = 1.0
+                task.error_msg = f"共 {len(pages)} 个分P (已合并)"
+            else:
+                task.status = DownloadStatus.COMPLETED
+                task.file_path = "; ".join(str(p) for p in part_paths)
+                task.file_size = sum(p.stat().st_size for p in part_paths if p.exists())
+                task.progress = 1.0
+                task.error_msg = f"共 {len(pages)} 个分P"
 
     async def _download_single_audio(
         self,
