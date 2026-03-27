@@ -378,8 +378,9 @@ class BatchDownloader:
         temp_dir.mkdir(parents=True, exist_ok=True)
         audio_tmp = temp_dir / f"{vi.bvid}_a.m4s"
 
+        is_durl = audio_stream.get("type") == "durl"
+
         try:
-            # 下载进度：M4A 模式占更大比例（因为没有转码步骤）
             dl_weight = 0.7 if convert_mp3 else 0.85
 
             def ap(downloaded: int, total: int, speed: float) -> None:
@@ -394,13 +395,20 @@ class BatchDownloader:
             if on_progress:
                 on_progress(task)
 
+            # durl 格式：先从合流中提取音频轨
+            if is_durl:
+                extracted = temp_dir / f"{vi.bvid}_extracted.m4a"
+                await asyncio.to_thread(
+                    self._audio_conv.extract_audio, audio_tmp, extracted
+                )
+                audio_tmp.unlink(missing_ok=True)
+                audio_tmp = extracted
+
             if convert_mp3:
-                # MP3 转码（慢，在线程池执行）
                 actual_output = await asyncio.to_thread(
                     self._audio_conv.convert_to_mp3, audio_tmp, output_path
                 )
             else:
-                # M4A 直接 remux（快）
                 actual_output = await asyncio.to_thread(
                     self._audio_conv.remux_to_m4a, audio_tmp, output_path
                 )

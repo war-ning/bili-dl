@@ -141,6 +141,54 @@ class AudioConverter:
             if input_container:
                 input_container.close()
 
+    def extract_audio(
+        self,
+        input_path: Path,
+        output_path: Path,
+    ) -> Path:
+        """从视频合流文件中提取音频轨道为 M4A
+
+        用于 durl 格式（FLV/MP4 合流）中只需要音频的场景。
+        """
+        input_container = None
+        output_container = None
+
+        try:
+            input_container = av.open(str(input_path))
+            if not input_container.streams.audio:
+                raise ConversionError("文件中无音频轨道")
+
+            output_container = av.open(str(output_path), "w", format="ipod")
+
+            in_stream = input_container.streams.audio[0]
+            out_stream = output_container.add_stream(
+                in_stream.codec_context.name,
+                rate=in_stream.codec_context.rate,
+            )
+            if in_stream.codec_context.extradata:
+                out_stream.codec_context.extradata = in_stream.codec_context.extradata
+
+            for packet in input_container.demux(in_stream):
+                if packet.dts is None:
+                    continue
+                packet.stream = out_stream
+                output_container.mux(packet)
+
+            return output_path
+
+        except Exception as e:
+            if output_container:
+                output_container.close()
+                output_container = None
+            if output_path.exists():
+                output_path.unlink(missing_ok=True)
+            raise ConversionError(f"提取音频失败: {e}") from e
+        finally:
+            if output_container:
+                output_container.close()
+            if input_container:
+                input_container.close()
+
     def write_id3_tags(
         self,
         audio_path: Path,

@@ -98,6 +98,32 @@ async def get_audio_stream(
     bvid: str,
     cid: int,
 ) -> Optional[dict]:
-    """仅获取最佳音频流"""
-    _, audio = await get_best_streams(client, bvid, cid)
-    return audio
+    """获取最佳音频流
+
+    优先 DASH 独立音频流，不可用时回退到 durl 合流（需后续提取音频）
+    """
+    data = await get_download_url(client, bvid, cid)
+
+    # 优先 DASH 音频流
+    dash = data.get("dash")
+    if dash:
+        audio_streams = dash.get("audio", [])
+        if audio_streams:
+            best = max(audio_streams, key=lambda x: x.get("bandwidth", 0))
+            return {
+                "url": best.get("base_url") or best.get("baseUrl", ""),
+                "backup_url": best.get("backup_url") or best.get("backupUrl", []),
+                "bandwidth": best.get("bandwidth", 0),
+                "codecs": best.get("codecs", ""),
+                "quality": best.get("id", 0),
+            }
+
+    # 回退 durl 合流（包含视频+音频，需后续提取音频轨道）
+    durl = data.get("durl", [])
+    if durl:
+        return {
+            "url": durl[0]["url"],
+            "type": "durl",  # 标记为合流格式
+        }
+
+    return None
