@@ -124,8 +124,15 @@ def configure_download(
         return "back"
 
     # 确认
-    type_summary = ", ".join(dt.value for dt in selected_types)
-    console.print(f"\n共 [green]{len(tasks)}[/green] 个下载任务 ({type_summary})")
+    video_count = len({t.video_info.bvid for t in tasks})
+    type_names = {
+        "video": "视频", "audio": "MP3音频", "audio_m4a": "M4A音频",
+        "cover": "封面", "cover_square": "正方形封面",
+    }
+    type_summary = ", ".join(type_names.get(dt.value, dt.value) for dt in selected_types)
+    console.print(f"\n[green]{video_count}[/green] 个视频, 共 [green]{len(tasks)}[/green] 个文件 ({type_summary})")
+    if merge_pages:
+        console.print("[dim]多分P视频将合并为一个文件")
     if not allow_charge:
         charge_skipped = sum(1 for v in videos if v.is_charge_plus)
         if charge_skipped:

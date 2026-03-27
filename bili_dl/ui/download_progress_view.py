@@ -47,7 +47,7 @@ def run_download(
         console.print()
         console.print(
             f"[bold]下载完成![/bold] "
-            f"[green]成功: {len(success)}[/green] "
+            f"[green]成功: {len(success)} 个文件[/green] "
             f"[red]失败: {len(failed)}[/red] "
             f"[yellow]跳过: {len(skipped)}[/yellow]"
         )
@@ -89,7 +89,7 @@ def run_download(
 
             # 提供重试选项
             action = questionary.select(
-                f"有 {len(failed)} 个任务失败，如何处理?",
+                f"有 {len(failed)} 个文件下载失败，如何处理?",
                 choices=[
                     questionary.Choice("重试全部失败项", value="retry_all"),
                     questionary.Choice("选择性重试", value="retry_select"),
@@ -143,7 +143,8 @@ def _execute_and_show(
     record_history: bool = True,
 ) -> list[DownloadTask]:
     """执行下载并显示进度条"""
-    console.print(f"\n[cyan]开始下载 {len(tasks)} 个任务...\n")
+    video_count = len({t.video_info.bvid for t in tasks})
+    console.print(f"\n[cyan]开始下载 {video_count} 个视频, 共 {len(tasks)} 个文件...\n")
 
     overall_progress = Progress(
         SpinnerColumn(),
