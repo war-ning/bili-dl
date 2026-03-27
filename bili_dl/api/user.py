@@ -43,7 +43,11 @@ async def get_user_videos(
             duration=parse_duration_str(item.get("length", "0:00")),
             play_count=play,
             publish_time=item.get("created", 0),
-            is_charge_plus=item.get("is_charge_plus", 0) == 1,
+            is_charge_plus=(
+                item.get("is_charging_arc", 0) == 1
+                or item.get("is_charge_plus", 0) == 1
+                or item.get("is_pay", 0) == 1
+            ),
             author_name=item.get("author", ""),
             author_mid=item.get("mid", mid),
         ))

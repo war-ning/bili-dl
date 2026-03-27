@@ -69,6 +69,16 @@ def run_download(
             if dirs:
                 console.print(f"\n[cyan]文件目录: {', '.join(dirs)}")
 
+        # 时长异常警告（可能是充电视频预览）
+        warned = [t for t in success if t.error_msg]
+        if warned:
+            console.print(f"\n[yellow]时长异常警告 ({len(warned)} 个):")
+            for t in warned:
+                console.print(
+                    f"  [yellow]![/yellow] {t.video_info.title[:40]} "
+                    f"- {t.error_msg}"
+                )
+
         if failed:
             console.print("\n[red]失败列表:")
             for t in failed:

@@ -92,6 +92,28 @@ async def _get_cid(client: BiliClient, bvid: str, cid: int) -> int:
     return pages[0]["cid"]
 
 
+def _check_duration(file_path: Path, expected_seconds: int) -> str | None:
+    """校验下载文件的实际时长与预期时长，返回警告信息或 None"""
+    if expected_seconds <= 0:
+        return None
+    try:
+        import av as _av
+        with _av.open(str(file_path)) as container:
+            actual = container.duration / 1_000_000 if container.duration else 0
+        if actual <= 0:
+            return None
+        # 实际时长不到预期的 60%，可能是充电视频的免费预览
+        if actual < expected_seconds * 0.6:
+            from ..utils.formatter import format_duration
+            return (
+                f"实际时长 {format_duration(int(actual))} 远短于预期 "
+                f"{format_duration(expected_seconds)}，可能是充电视频的免费预览"
+            )
+    except Exception:
+        pass
+    return None
+
+
 class BatchDownloader:
     """批量下载调度器"""
 
@@ -305,13 +327,17 @@ class BatchDownloader:
 
             set_file_mtime(output_path, vi.publish_time)
 
+            # 校验时长
+            warn = await asyncio.to_thread(_check_duration, output_path, vi.duration)
+
             task.status = DownloadStatus.COMPLETED
             task.file_path = str(output_path)
             task.file_size = output_path.stat().st_size
             task.progress = 1.0
+            if warn:
+                task.error_msg = warn
 
         except Exception:
-            # #13: 失败时清理输出文件
             if output_path.exists() and task.status != DownloadStatus.COMPLETED:
                 output_path.unlink(missing_ok=True)
             raise
@@ -408,13 +434,17 @@ class BatchDownloader:
 
             set_file_mtime(actual_output, vi.publish_time)
 
+            # 校验时长
+            warn = await asyncio.to_thread(_check_duration, actual_output, vi.duration)
+
             task.status = DownloadStatus.COMPLETED
             task.file_path = str(actual_output)
             task.file_size = actual_output.stat().st_size
             task.progress = 1.0
+            if warn:
+                task.error_msg = warn
 
         except Exception:
-            # #13: 失败时清理
             for p in [output_path, output_path.with_suffix(".m4a")]:
                 if p.exists() and task.status != DownloadStatus.COMPLETED:
                     p.unlink(missing_ok=True)
