@@ -35,7 +35,6 @@ DOWNLOAD_HEADERS = {
     "Referer": "https://www.bilibili.com",
 }
 
-# #6: 可重试的异常类型
 RETRYABLE_EXCEPTIONS = (
     httpx.TimeoutException,
     httpx.NetworkError,
@@ -82,14 +81,12 @@ async def stream_download(
     return downloaded
 
 
-async def _get_cid(client: BiliClient, bvid: str, cid: int) -> int:
-    """获取 cid，防空保护 (#3)"""
-    if cid != 0:
-        return cid
+async def _get_pages(client: BiliClient, bvid: str) -> list[dict]:
+    """获取视频所有分P信息"""
     pages = await get_video_pages(client, bvid)
     if not pages:
         raise BiliDLError(f"无法获取视频分P信息: {bvid}")
-    return pages[0]["cid"]
+    return pages
 
 
 def _check_duration(file_path: Path, expected_seconds: int) -> str | None:
@@ -102,7 +99,6 @@ def _check_duration(file_path: Path, expected_seconds: int) -> str | None:
             actual = container.duration / 1_000_000 if container.duration else 0
         if actual <= 0:
             return None
-        # 实际时长不到预期的 60%，可能是充电视频的免费预览
         if actual < expected_seconds * 0.6:
             from ..utils.formatter import format_duration
             return (
@@ -132,19 +128,20 @@ class BatchDownloader:
         self._cover_proc = CoverProcessor()
         self._download_dir = Path(config.download_dir)
         self._filename_template = config.filename_template or "{title}_{bvid}"
-        # #12: 取消信号
         self._cancelled = False
 
-    def _build_path(self, vi, ext: str) -> Path:
+    def _build_path(self, vi, ext: str, suffix: str = "") -> Path:
         """统一构建输出路径"""
         date = timestamp_to_str(vi.publish_time, "%Y-%m-%d") if vi.publish_time else ""
+        title = vi.title
+        if suffix:
+            title = f"{vi.title}_{suffix}"
         return build_file_path(
-            self._download_dir, vi.author_name, vi.title, vi.bvid, ext,
+            self._download_dir, vi.author_name, title, vi.bvid, ext,
             template=self._filename_template, date=date,
         )
 
     def cancel(self) -> None:
-        """设置取消信号"""
         self._cancelled = True
 
     async def execute_task(
@@ -153,9 +150,8 @@ class BatchDownloader:
         on_progress: Optional[Callable[[DownloadTask], None]] = None,
         record_history: bool = True,
     ) -> DownloadTask:
-        """执行单个下载任务，带重试逻辑 (#6)"""
+        """执行单个下载任务，带重试逻辑"""
         async with self._semaphore:
-            # #12: 检查取消
             if self._cancelled:
                 task.status = DownloadStatus.SKIPPED
                 task.error_msg = "用户取消"
@@ -165,7 +161,6 @@ class BatchDownloader:
                     on_progress(task)
                 return task
 
-            last_error = None
             for attempt in range(MAX_RETRIES + 1):
                 try:
                     task.status = DownloadStatus.DOWNLOADING
@@ -184,11 +179,9 @@ class BatchDownloader:
                         case DownloadType.COVER | DownloadType.COVER_SQUARE:
                             await self._download_cover(task, on_progress)
 
-                    # 成功，跳出重试循环
                     break
 
                 except RETRYABLE_EXCEPTIONS as e:
-                    last_error = e
                     if attempt < MAX_RETRIES:
                         await asyncio.sleep(RETRY_DELAYS[attempt])
                         continue
@@ -216,11 +209,11 @@ class BatchDownloader:
         if not tasks:
             return []
 
-        # 预获取 cid，避免同一视频的多个任务重复请求 API
-        bvids_need_cid = {t.video_info.bvid for t in tasks
-                         if t.video_info.cid == 0
-                         and t.download_type in (DownloadType.VIDEO, DownloadType.AUDIO, DownloadType.AUDIO_FAST)}
-        for bvid in bvids_need_cid:
+        # 预获取分P信息，避免重复请求
+        bvids_need_pages = {t.video_info.bvid for t in tasks
+                           if t.video_info.cid == 0
+                           and t.download_type in (DownloadType.VIDEO, DownloadType.AUDIO, DownloadType.AUDIO_FAST)}
+        for bvid in bvids_need_pages:
             try:
                 pages = await get_video_pages(self._client, bvid)
                 if pages:
@@ -229,7 +222,7 @@ class BatchDownloader:
                         if t.video_info.bvid == bvid:
                             t.video_info.cid = cid
             except Exception:
-                pass  # 让后续任务中的 _get_cid 处理
+                pass
 
         total = len(tasks)
         completed_count = 0
@@ -255,36 +248,76 @@ class BatchDownloader:
 
         return list(results)
 
+    # ─── 视频下载 ───
+
     async def _download_video(
         self,
         task: DownloadTask,
         on_progress: Optional[Callable[[DownloadTask], None]],
     ) -> None:
-        """下载视频（DASH 视频+音频 -> MP4）"""
+        """下载视频，支持多分P"""
         vi = task.video_info
 
-        # #3: 防空保护
-        vi.cid = await _get_cid(self._client, vi.bvid, vi.cid)
+        pages = await _get_pages(self._client, vi.bvid)
 
+        if len(pages) == 1:
+            # 单P：直接下载
+            cid = pages[0]["cid"]
+            output_path = self._build_path(vi, ".mp4")
+            await self._download_single_video(task, vi, cid, output_path, on_progress, 0.0, 1.0, is_single=True)
+        else:
+            # 多P：逐P下载，分别保存
+            output_paths = []
+            for idx, page in enumerate(pages):
+                cid = page["cid"]
+                part_name = page.get("part", f"P{page['page']}")
+                suffix = f"P{page['page']}_{part_name}"
+                output_path = self._build_path(vi, ".mp4", suffix=suffix)
+
+                p_start = idx / len(pages)
+                p_end = (idx + 1) / len(pages)
+                await self._download_single_video(task, vi, cid, output_path, on_progress, p_start, p_end, is_single=False)
+                output_paths.append(str(output_path))
+
+            task.status = DownloadStatus.COMPLETED
+            task.file_path = "; ".join(output_paths)
+            task.file_size = sum(Path(p).stat().st_size for p in output_paths if Path(p).exists())
+            task.progress = 1.0
+            task.error_msg = f"共 {len(pages)} 个分P"
+
+    async def _download_single_video(
+        self,
+        task: DownloadTask,
+        vi,
+        cid: int,
+        output_path: Path,
+        on_progress: Optional[Callable[[DownloadTask], None]],
+        progress_start: float,
+        progress_end: float,
+        is_single: bool = True,
+    ) -> None:
+        """下载单个分P的视频"""
         video_stream, audio_stream = await get_best_streams(
-            self._client, vi.bvid, vi.cid
+            self._client, vi.bvid, cid
         )
 
         if not video_stream:
-            raise BiliDLError("无法获取视频流")
+            raise BiliDLError(f"无法获取视频流 (cid={cid})")
 
-        output_path = self._build_path(vi, ".mp4")
         output_path.parent.mkdir(parents=True, exist_ok=True)
-        temp_dir = self._download_dir / ".tmp" / f"{vi.bvid}_video"
+        temp_dir = self._download_dir / ".tmp" / f"{vi.bvid}_{cid}_video"
         temp_dir.mkdir(parents=True, exist_ok=True)
 
         video_tmp = temp_dir / f"{vi.bvid}_v.m4s"
         audio_tmp = temp_dir / f"{vi.bvid}_a.m4s"
 
+        progress_range = progress_end - progress_start
+
         try:
             if video_stream.get("type") == "flv":
                 def flv_progress(downloaded: int, total: int, speed: float) -> None:
-                    task.progress = downloaded / total if total > 0 else 0
+                    p = (downloaded / total) if total > 0 else 0
+                    task.progress = progress_start + p * progress_range
                     task.speed = speed
                     if on_progress:
                         on_progress(task)
@@ -293,7 +326,8 @@ class BatchDownloader:
             else:
                 async def dl_video() -> None:
                     def vp(downloaded: int, total: int, speed: float) -> None:
-                        task.progress = (downloaded / total * 0.45) if total > 0 else 0
+                        p = (downloaded / total * 0.45) if total > 0 else 0
+                        task.progress = progress_start + p * progress_range
                         task.speed = speed
                         if on_progress:
                             on_progress(task)
@@ -306,7 +340,7 @@ class BatchDownloader:
 
                     def ap(downloaded: int, total: int, speed: float) -> None:
                         p = (downloaded / total * 0.45) if total > 0 else 0
-                        task.progress = 0.45 + p
+                        task.progress = progress_start + (0.45 + p) * progress_range
                         if on_progress:
                             on_progress(task)
 
@@ -314,7 +348,7 @@ class BatchDownloader:
 
                 await asyncio.gather(dl_video(), dl_audio())
 
-                task.progress = 0.9
+                task.progress = progress_start + 0.9 * progress_range
                 if on_progress:
                     on_progress(task)
 
@@ -327,15 +361,16 @@ class BatchDownloader:
 
             set_file_mtime(output_path, vi.publish_time)
 
-            # 校验时长
-            warn = await asyncio.to_thread(_check_duration, output_path, vi.duration)
-
-            task.status = DownloadStatus.COMPLETED
-            task.file_path = str(output_path)
-            task.file_size = output_path.stat().st_size
-            task.progress = 1.0
-            if warn:
-                task.error_msg = warn
+            # 单P：设置完成状态 + 校验时长
+            # 多P：由外层统一设置，不校验（每P时长 != 总时长）
+            if is_single:
+                warn = await asyncio.to_thread(_check_duration, output_path, vi.duration)
+                task.status = DownloadStatus.COMPLETED
+                task.file_path = str(output_path)
+                task.file_size = output_path.stat().st_size
+                task.progress = 1.0
+                if warn:
+                    task.error_msg = warn
 
         except Exception:
             if output_path.exists() and task.status != DownloadStatus.COMPLETED:
@@ -351,52 +386,87 @@ class BatchDownloader:
                 except OSError:
                     pass
 
+    # ─── 音频下载 ───
+
     async def _download_audio(
         self,
         task: DownloadTask,
         on_progress: Optional[Callable[[DownloadTask], None]],
         convert_mp3: bool = True,
     ) -> None:
-        """下载音频
-
-        Args:
-            convert_mp3: True=转码MP3(慢), False=直接remux M4A(快)
-        """
+        """下载音频，支持多分P"""
         vi = task.video_info
 
-        # #3: 防空保护
-        vi.cid = await _get_cid(self._client, vi.bvid, vi.cid)
+        pages = await _get_pages(self._client, vi.bvid)
 
-        audio_stream = await get_audio_stream(self._client, vi.bvid, vi.cid)
+        if len(pages) == 1:
+            cid = pages[0]["cid"]
+            target_ext = ".mp3" if convert_mp3 else ".m4a"
+            output_path = self._build_path(vi, target_ext)
+            await self._download_single_audio(task, vi, cid, output_path, on_progress, convert_mp3, 0.0, 1.0, is_single=True)
+        else:
+            output_paths = []
+            for idx, page in enumerate(pages):
+                cid = page["cid"]
+                part_name = page.get("part", f"P{page['page']}")
+                suffix = f"P{page['page']}_{part_name}"
+                target_ext = ".mp3" if convert_mp3 else ".m4a"
+                output_path = self._build_path(vi, target_ext, suffix=suffix)
+
+                p_start = idx / len(pages)
+                p_end = (idx + 1) / len(pages)
+                await self._download_single_audio(task, vi, cid, output_path, on_progress, convert_mp3, p_start, p_end, is_single=False)
+                output_paths.append(str(output_path))
+
+            task.status = DownloadStatus.COMPLETED
+            task.file_path = "; ".join(output_paths)
+            task.file_size = sum(Path(p).stat().st_size for p in output_paths if Path(p).exists())
+            task.progress = 1.0
+            task.error_msg = f"共 {len(pages)} 个分P"
+
+    async def _download_single_audio(
+        self,
+        task: DownloadTask,
+        vi,
+        cid: int,
+        output_path: Path,
+        on_progress: Optional[Callable[[DownloadTask], None]],
+        convert_mp3: bool,
+        progress_start: float,
+        progress_end: float,
+        is_single: bool = True,
+    ) -> None:
+        """下载单个分P的音频"""
+        audio_stream = await get_audio_stream(self._client, vi.bvid, cid)
         if not audio_stream:
-            raise BiliDLError("无法获取音频流")
+            raise BiliDLError(f"无法获取音频流 (cid={cid})")
 
-        target_ext = ".mp3" if convert_mp3 else ".m4a"
-        output_path = self._build_path(vi, target_ext)
         output_path.parent.mkdir(parents=True, exist_ok=True)
-        temp_dir = self._download_dir / ".tmp" / f"{vi.bvid}_audio"
+        temp_dir = self._download_dir / ".tmp" / f"{vi.bvid}_{cid}_audio"
         temp_dir.mkdir(parents=True, exist_ok=True)
         audio_tmp = temp_dir / f"{vi.bvid}_a.m4s"
-        temp_files = [audio_tmp]  # 追踪所有临时文件
+        temp_files = [audio_tmp]
 
         is_durl = audio_stream.get("type") == "durl"
+        progress_range = progress_end - progress_start
 
         try:
             dl_weight = 0.7 if convert_mp3 else 0.85
 
             def ap(downloaded: int, total: int, speed: float) -> None:
-                task.progress = (downloaded / total * dl_weight) if total > 0 else 0
+                p = (downloaded / total * dl_weight) if total > 0 else 0
+                task.progress = progress_start + p * progress_range
                 task.speed = speed
                 if on_progress:
                     on_progress(task)
 
             await stream_download(audio_stream["url"], audio_tmp, ap)
 
-            task.progress = 0.8 if convert_mp3 else 0.9
+            task.progress = progress_start + 0.8 * progress_range
             if on_progress:
                 on_progress(task)
 
-            # durl 格式：先从合流中提取音频轨
+            # durl 格式：先提取音频轨
             if is_durl:
                 extracted = temp_dir / f"{vi.bvid}_extracted.m4a"
                 temp_files.append(extracted)
@@ -415,7 +485,7 @@ class BatchDownloader:
                 )
 
             # 下载封面用于标签
-            task.progress = 0.95
+            task.progress = progress_start + 0.95 * progress_range
             if on_progress:
                 on_progress(task)
 
@@ -443,15 +513,14 @@ class BatchDownloader:
 
             set_file_mtime(actual_output, vi.publish_time)
 
-            # 校验时长
-            warn = await asyncio.to_thread(_check_duration, actual_output, vi.duration)
-
-            task.status = DownloadStatus.COMPLETED
-            task.file_path = str(actual_output)
-            task.file_size = actual_output.stat().st_size
-            task.progress = 1.0
-            if warn:
-                task.error_msg = warn
+            if is_single:
+                warn = await asyncio.to_thread(_check_duration, actual_output, vi.duration)
+                task.status = DownloadStatus.COMPLETED
+                task.file_path = str(actual_output)
+                task.file_size = actual_output.stat().st_size
+                task.progress = 1.0
+                if warn:
+                    task.error_msg = warn
 
         except Exception:
             for p in [output_path, output_path.with_suffix(".m4a")]:
@@ -467,6 +536,8 @@ class BatchDownloader:
                     temp_dir.rmdir()
                 except OSError:
                     pass
+
+    # ─── 封面下载 ───
 
     async def _download_cover(
         self,
@@ -524,7 +595,6 @@ class BatchDownloader:
             task.progress = 1.0
 
         except Exception:
-            # 清理残留临时文件
             if is_square and original_path != output_path and original_path.exists():
                 original_path.unlink(missing_ok=True)
             if output_path.exists() and task.status != DownloadStatus.COMPLETED:
