@@ -209,21 +209,6 @@ class BatchDownloader:
         if not tasks:
             return []
 
-        # 预获取分P信息，避免重复请求
-        bvids_need_pages = {t.video_info.bvid for t in tasks
-                           if t.video_info.cid == 0
-                           and t.download_type in (DownloadType.VIDEO, DownloadType.AUDIO, DownloadType.AUDIO_FAST)}
-        for bvid in bvids_need_pages:
-            try:
-                pages = await get_video_pages(self._client, bvid)
-                if pages:
-                    cid = pages[0]["cid"]
-                    for t in tasks:
-                        if t.video_info.bvid == bvid:
-                            t.video_info.cid = cid
-            except Exception:
-                pass
-
         total = len(tasks)
         completed_count = 0
         self._cancelled = False
@@ -268,16 +253,23 @@ class BatchDownloader:
         else:
             # 多P：逐P下载，分别保存
             output_paths = []
-            for idx, page in enumerate(pages):
-                cid = page["cid"]
-                part_name = page.get("part", f"P{page['page']}")
-                suffix = f"P{page['page']}_{part_name}"
-                output_path = self._build_path(vi, ".mp4", suffix=suffix)
+            try:
+                for idx, page in enumerate(pages):
+                    cid = page["cid"]
+                    part_name = page.get("part", f"P{page['page']}")
+                    suffix = f"P{page['page']}_{part_name}"
+                    output_path = self._build_path(vi, ".mp4", suffix=suffix)
 
-                p_start = idx / len(pages)
-                p_end = (idx + 1) / len(pages)
-                await self._download_single_video(task, vi, cid, output_path, on_progress, p_start, p_end, is_single=False)
-                output_paths.append(str(output_path))
+                    p_start = idx / len(pages)
+                    p_end = (idx + 1) / len(pages)
+                    await self._download_single_video(task, vi, cid, output_path, on_progress, p_start, p_end, is_single=False)
+                    output_paths.append(str(output_path))
+            except Exception:
+                # 部分分P已下载，记录已完成的路径
+                if output_paths:
+                    task.file_path = "; ".join(output_paths)
+                    task.error_msg = f"分P {len(output_paths)+1}/{len(pages)} 下载失败，已完成 {len(output_paths)} 个"
+                raise
 
             task.status = DownloadStatus.COMPLETED
             task.file_path = "; ".join(output_paths)
@@ -406,17 +398,23 @@ class BatchDownloader:
             await self._download_single_audio(task, vi, cid, output_path, on_progress, convert_mp3, 0.0, 1.0, is_single=True)
         else:
             output_paths = []
-            for idx, page in enumerate(pages):
-                cid = page["cid"]
-                part_name = page.get("part", f"P{page['page']}")
-                suffix = f"P{page['page']}_{part_name}"
-                target_ext = ".mp3" if convert_mp3 else ".m4a"
-                output_path = self._build_path(vi, target_ext, suffix=suffix)
+            try:
+                for idx, page in enumerate(pages):
+                    cid = page["cid"]
+                    part_name = page.get("part", f"P{page['page']}")
+                    suffix = f"P{page['page']}_{part_name}"
+                    target_ext = ".mp3" if convert_mp3 else ".m4a"
+                    output_path = self._build_path(vi, target_ext, suffix=suffix)
 
-                p_start = idx / len(pages)
-                p_end = (idx + 1) / len(pages)
-                await self._download_single_audio(task, vi, cid, output_path, on_progress, convert_mp3, p_start, p_end, is_single=False)
-                output_paths.append(str(output_path))
+                    p_start = idx / len(pages)
+                    p_end = (idx + 1) / len(pages)
+                    await self._download_single_audio(task, vi, cid, output_path, on_progress, convert_mp3, p_start, p_end, is_single=False)
+                    output_paths.append(str(output_path))
+            except Exception:
+                if output_paths:
+                    task.file_path = "; ".join(output_paths)
+                    task.error_msg = f"分P {len(output_paths)+1}/{len(pages)} 下载失败，已完成 {len(output_paths)} 个"
+                raise
 
             task.status = DownloadStatus.COMPLETED
             task.file_path = "; ".join(output_paths)
