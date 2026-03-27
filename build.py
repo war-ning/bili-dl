@@ -93,10 +93,13 @@ def main():
             if f.endswith((".dll", ".so", ".dylib", ".pyd")):
                 src = os.path.join(av_dir, f)
                 cmd.extend(["--add-binary", f"{src}{os.pathsep}av"])
-        # av 的 libs 子目录（Windows 上可能有 ffmpeg dll）
+        # av 的 libs 子目录（Windows 上有 ffmpeg dll）
         libs_dir = os.path.join(av_dir, "libs")
         if os.path.isdir(libs_dir):
-            cmd.extend(["--add-binary", f"{libs_dir}/*{os.pathsep}av/libs"])
+            for f in os.listdir(libs_dir):
+                src = os.path.join(libs_dir, f)
+                if os.path.isfile(src):
+                    cmd.extend(["--add-binary", f"{src}{os.pathsep}av/libs"])
     except Exception:
         pass
 
