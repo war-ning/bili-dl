@@ -6,6 +6,7 @@ venv/
 data/
 downloads/
 *.egg-info/
+*.spec
 dist/
 build/
 .DS_Store
