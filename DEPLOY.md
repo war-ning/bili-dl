@@ -1,6 +1,63 @@
 # Bili-DL 部署与启动指南
 
-## 环境要求
+有两种部署方式：**独立可执行文件**（推荐，无需安装环境）和**源码运行**。
+
+---
+
+## 方式一：独立可执行文件（推荐）
+
+无需安装 Python，直接运行。
+
+### 1. 打包
+
+在一台有 Python 3.10+ 的机器上执行：
+
+```bash
+cd bili-dl
+
+# 安装依赖 + 打包工具
+pip install -r requirements.txt
+pip install pyinstaller
+
+# 打包
+python3 build.py
+```
+
+打包产物在 `dist/` 目录下：
+- Linux: `dist/bili-dl`（约 87MB）
+- Windows: `dist/bili-dl.exe`
+
+> PyInstaller 只能打包当前平台。Linux 上打包生成 Linux 版，Windows 上打包生成 Windows 版。
+
+### 2. 部署到目标机器
+
+只需复制一个文件：
+
+```bash
+# Linux
+scp dist/bili-dl user@target-server:/usr/local/bin/
+
+# Windows
+# 直接复制 dist/bili-dl.exe 到目标机器
+```
+
+### 3. 运行
+
+```bash
+# Linux / Mac
+./bili-dl
+
+# Windows
+bili-dl.exe
+```
+
+首次运行会引导配置下载目录和 Cookie。数据文件（config.json、history.json）保存在可执行文件同级的 `data/` 目录下。
+
+---
+
+## 方式二：源码运行
+
+### 环境要求
 
 - Python 3.10+
 - pip（Python 包管理器）

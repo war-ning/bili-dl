@@ -41,9 +41,39 @@ pip install -r requirements.txt
 
 ## 使用
 
+### 方式一：直接运行（需要 Python 环境）
+
 ```bash
 python3 main.py
 ```
+
+### 方式二：打包为独立可执行文件（无需 Python 环境）
+
+打包后生成单个文件，拷贝到任意机器直接运行，不需要安装 Python 和依赖。
+
+```bash
+# 安装打包工具
+pip install pyinstaller
+
+# 打包（在项目根目录执行）
+python3 build.py
+
+# 打包产物在 dist/ 目录下
+# Linux:   dist/bili-dl
+# Windows: dist/bili-dl.exe
+```
+
+运行打包后的文件：
+
+```bash
+# Linux / Mac
+./dist/bili-dl
+
+# Windows
+dist\bili-dl.exe
+```
+
+> **注意：** PyInstaller 只能打包当前平台的可执行文件。要打 Windows 包需要在 Windows 上执行 `python build.py`，要打 Linux 包需要在 Linux 上执行。
 
 首次运行会引导配置下载目录和 Cookie（可选）。
 
