@@ -377,6 +377,7 @@ class BatchDownloader:
         temp_dir = self._download_dir / ".tmp" / f"{vi.bvid}_audio"
         temp_dir.mkdir(parents=True, exist_ok=True)
         audio_tmp = temp_dir / f"{vi.bvid}_a.m4s"
+        temp_files = [audio_tmp]  # 追踪所有临时文件
 
         is_durl = audio_stream.get("type") == "durl"
 
@@ -398,10 +399,10 @@ class BatchDownloader:
             # durl 格式：先从合流中提取音频轨
             if is_durl:
                 extracted = temp_dir / f"{vi.bvid}_extracted.m4a"
+                temp_files.append(extracted)
                 await asyncio.to_thread(
                     self._audio_conv.extract_audio, audio_tmp, extracted
                 )
-                audio_tmp.unlink(missing_ok=True)
                 audio_tmp = extracted
 
             if convert_mp3:
@@ -458,8 +459,9 @@ class BatchDownloader:
                     p.unlink(missing_ok=True)
             raise
         finally:
-            if audio_tmp.exists():
-                audio_tmp.unlink(missing_ok=True)
+            for f in temp_files:
+                if f.exists():
+                    f.unlink(missing_ok=True)
             if temp_dir.exists():
                 try:
                     temp_dir.rmdir()
