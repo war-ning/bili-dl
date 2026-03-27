@@ -92,9 +92,10 @@ class AppConfig:
     max_concurrent: int = 3
     preferred_quality: int = 80
     request_interval_ms: int = 300
-    cover_fill_mode: str = "solid_color"
+    cover_fill_mode: str = "blur"
     cover_fill_color: list[int] = field(default_factory=lambda: [0, 0, 0])
     cover_blur_radius: int = 40
+    merge_pages: bool = False
     filename_template: str = "{title}_{bvid}"
     sessdata: str = ""
     bili_jct: str = ""

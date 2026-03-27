@@ -50,6 +50,7 @@ def show_settings(config_mgr: ConfigManager) -> None:
         table.add_row("封面填充模式", cfg.cover_fill_mode)
         table.add_row("封面填充颜色", str(cfg.cover_fill_color))
         table.add_row("模糊半径", str(cfg.cover_blur_radius))
+        table.add_row("多分P处理", "合并为一个文件" if cfg.merge_pages else "每P单独保存")
         table.add_row("文件命名模板", cfg.filename_template)
         table.add_row(
             "Cookie (SESSDATA)",
@@ -66,6 +67,7 @@ def show_settings(config_mgr: ConfigManager) -> None:
                 questionary.Choice("画质偏好", value="quality"),
                 questionary.Choice("封面填充模式", value="cover_mode"),
                 questionary.Choice("封面填充颜色 (RGB)", value="cover_color"),
+                questionary.Choice("多分P处理", value="merge_pages"),
                 questionary.Choice("文件命名模板", value="filename_template"),
                 questionary.Choice("Cookie 设置", value="cookie"),
                 questionary.Choice("返回主菜单", value="back"),
@@ -149,6 +151,19 @@ def show_settings(config_mgr: ConfigManager) -> None:
                     console.print("[red]请输入 3 个 0-255 的数字，用逗号分隔")
             except (ValueError, TypeError, AttributeError):
                 console.print("[red]格式错误")
+
+        elif action == "merge_pages":
+            mp = questionary.select(
+                "多分P视频处理方式:",
+                choices=[
+                    questionary.Choice("每P单独保存", value=False),
+                    questionary.Choice("合并为一个文件", value=True),
+                ],
+            ).ask()
+            if mp is not None:
+                cfg.merge_pages = mp
+                config_mgr.save(cfg)
+                console.print("[green]已更新多分P处理方式")
 
         elif action == "filename_template":
             console.print(

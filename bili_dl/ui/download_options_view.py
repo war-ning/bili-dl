@@ -61,25 +61,8 @@ def configure_download(
         console.print("[yellow]未选择下载类型")
         return "back"
 
-    # 封面填充模式（仅在选了正方形封面时）
-    cover_fill_mode = None
-    if DownloadType.COVER_SQUARE in selected_types:
-        fill_choices = [
-            questionary.Choice(
-                "纯色填充 (默认黑色)",
-                value=CoverFillMode.SOLID_COLOR,
-            ),
-            questionary.Choice(
-                "模糊背景填充",
-                value=CoverFillMode.BLUR,
-            ),
-        ]
-        cover_fill_mode = questionary.select(
-            "封面填充模式:",
-            choices=fill_choices,
-        ).ask()
-        if cover_fill_mode is None:
-            return "back"
+    # 封面填充模式：直接使用配置值
+    cover_fill_mode = CoverFillMode(config.cover_fill_mode)
 
     # 检查重复下载
     duplicate_tasks: list[tuple[VideoInfo, DownloadType, str]] = []
@@ -115,23 +98,8 @@ def configure_download(
                 (v.bvid, dt.value) for v, dt, _ in duplicate_tasks
             }
 
-    # 多分P处理方式（仅视频/音频类型需要）
-    merge_pages = False
-    has_av_types = any(
-        dt in (DownloadType.VIDEO, DownloadType.AUDIO, DownloadType.AUDIO_FAST)
-        for dt in selected_types
-    )
-    if has_av_types:
-        page_action = questionary.select(
-            "多分P视频如何处理?",
-            choices=[
-                questionary.Choice("每P单独保存", value="separate"),
-                questionary.Choice("合并为一个文件", value="merge"),
-            ],
-        ).ask()
-        if page_action is None:
-            return "back"
-        merge_pages = page_action == "merge"
+    # 多分P处理方式：直接使用配置值
+    merge_pages = config.merge_pages
 
     # 构建任务列表
     tasks: list[DownloadTask] = []
