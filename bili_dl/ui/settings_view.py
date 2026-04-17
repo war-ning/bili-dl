@@ -72,6 +72,7 @@ def show_settings(config_mgr: ConfigManager) -> None:
                 questionary.Choice("文件命名模板", value="filename_template"),
                 questionary.Choice("合集命名模板", value="season_template"),
                 questionary.Choice("Cookie 设置", value="cookie"),
+                questionary.Choice("重置为默认配置 (保留 Cookie 与下载目录)", value="reset"),
                 questionary.Choice("返回主菜单", value="back"),
             ],
         ).ask()
@@ -185,7 +186,7 @@ def show_settings(config_mgr: ConfigManager) -> None:
                 try:
                     tpl.strip().format(
                         title="test", bvid="BV1xxx", author="UP",
-                        date="2026-01-01", season="s", episode=1,
+                        date="2026-01-01", season="s", section="x", episode=1,
                     )
                     cfg.filename_template = tpl.strip()
                     config_mgr.save(cfg)
@@ -201,9 +202,10 @@ def show_settings(config_mgr: ConfigManager) -> None:
                 "  {author}  — UP 主名\n"
                 "  {date}    — 发布日期 (YYYY-MM-DD)\n"
                 "  {season}  — 合集名 (子目录已自动用此名)\n"
-                "  {episode} — 合集内序号，可格式化如 {episode:02d}\n"
-                "\n[dim]示例: {episode:02d}_{title}_{bvid}, "
-                "{episode:03d}_{title}[/dim]\n"
+                "  {section} — 合集内分节名 (子目录已自动用此名)\n"
+                "  {episode} — 合集/节内序号，可格式化如 {episode:02d}\n"
+                "\n[dim]默认 {title}_{bvid} — 合集内视频标题通常已含编号\n"
+                "欲加前缀可用: {episode:02d}_{title}_{bvid}[/dim]\n"
             )
             tpl = questionary.text(
                 "合集命名模板:",
@@ -213,7 +215,7 @@ def show_settings(config_mgr: ConfigManager) -> None:
                 try:
                     tpl.strip().format(
                         title="test", bvid="BV1xxx", author="UP",
-                        date="2026-01-01", season="s", episode=1,
+                        date="2026-01-01", season="s", section="x", episode=1,
                     )
                     cfg.season_filename_template = tpl.strip()
                     config_mgr.save(cfg)
@@ -223,6 +225,23 @@ def show_settings(config_mgr: ConfigManager) -> None:
 
         elif action == "cookie":
             _configure_cookie(config_mgr, cfg)
+
+        elif action == "reset":
+            confirm = questionary.confirm(
+                "确认重置为默认配置? (Cookie 与下载目录保留)",
+                default=False,
+            ).ask()
+            if confirm:
+                new_cfg = AppConfig(
+                    download_dir=cfg.download_dir,
+                    sessdata=cfg.sessdata,
+                    bili_jct=cfg.bili_jct,
+                    buvid3=cfg.buvid3,
+                    dedeuserid=cfg.dedeuserid,
+                    ac_time_value=cfg.ac_time_value,
+                )
+                config_mgr.save(new_cfg)
+                console.print("[green]已重置为默认配置")
 
 
 def _configure_cookie(config_mgr: ConfigManager, cfg: AppConfig) -> None:

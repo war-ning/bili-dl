@@ -61,6 +61,30 @@ def configure_download(
         console.print("[yellow]未选择下载类型")
         return "back"
 
+    # 充电专属视频处理：仅当检测到充电视频且非 charge_only 入口时询问
+    allow_charge_final = allow_charge
+    if not allow_charge:
+        charge_videos = [v for v in videos if v.is_charge_plus]
+        if charge_videos:
+            remaining = len(videos) - len(charge_videos)
+            ch_action = questionary.select(
+                f"检测到 {len(charge_videos)} 个充电专属视频，如何处理?",
+                choices=[
+                    questionary.Choice(
+                        f"排除充电 (仅下其余 {remaining} 个)", value="exclude",
+                    ),
+                    questionary.Choice(
+                        "仍尝试下载 (需已为该 UP 充电; 未充者仅得试看片段)",
+                        value="keep",
+                    ),
+                    questionary.Choice("<<< 上一步 <<<", value="back"),
+                ],
+            ).ask()
+            if ch_action is None or ch_action == "back":
+                return "back"
+            if ch_action == "keep":
+                allow_charge_final = True
+
     # 封面填充模式：直接使用配置值
     cover_fill_mode = CoverFillMode(config.cover_fill_mode)
 
@@ -104,7 +128,7 @@ def configure_download(
     # 构建任务列表
     tasks: list[DownloadTask] = []
     for video in videos:
-        if video.is_charge_plus and not allow_charge:
+        if video.is_charge_plus and not allow_charge_final:
             continue
 
         for dt in selected_types:
@@ -133,7 +157,7 @@ def configure_download(
     console.print(f"\n[green]{video_count}[/green] 个视频, 共 [green]{len(tasks)}[/green] 个文件 ({type_summary})")
     if merge_pages:
         console.print("[dim]多分P视频将合并为一个文件")
-    if not allow_charge:
+    if not allow_charge_final:
         charge_skipped = sum(1 for v in videos if v.is_charge_plus)
         if charge_skipped:
             console.print(f"[yellow]已跳过 {charge_skipped} 个充电专属视频")

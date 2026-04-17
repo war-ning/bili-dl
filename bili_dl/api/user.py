@@ -8,7 +8,7 @@ from bilibili_api.user import User, VideoOrder
 
 from ..models import UPInfo, VideoInfo
 from ..utils.formatter import parse_duration_str
-from .client import BiliClient
+from .client import BiliClient, with_risk_retry
 
 
 async def get_user_videos(
@@ -22,7 +22,10 @@ async def get_user_videos(
     await client.throttle()
 
     u = User(uid=mid, credential=client.credential)
-    result = await u.get_videos(pn=page, ps=page_size, order=order)
+    result = await with_risk_retry(
+        lambda: u.get_videos(pn=page, ps=page_size, order=order),
+        op_name="视频列表",
+    )
 
     total = result.get("page", {}).get("count", 0)
     videos: list[VideoInfo] = []

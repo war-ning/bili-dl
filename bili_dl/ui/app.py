@@ -123,17 +123,17 @@ def _handle_up_download(
     up_info,
     charge_only: bool,
 ) -> str | None:
-    """处理选中 UP 主后的流程，返回 "back_to_search" 表示回到搜索"""
+    """处理选中 UP 主后的流程，返回 "back_to_search" 表示回到搜索
+
+    非充电模式维持 mode 状态：下载后"继续"或"back_to_videos"回退时，
+    不再反复询问模式，直接复用上次选择；仅当视频选择界面点"上一步"时
+    才回到模式选择层。
+    """
+    mode: str | None = None  # None 表示需询问模式
 
     while True:
-        # Step 2: 选择视频
-        if charge_only:
-            selected = video_list_view.load_and_select_videos(
-                client, up_info, charge_only=True,
-            )
-            if selected == "back":
-                return "back_to_search"
-        else:
+        # Step 2a: (非充电) 若无模式，询问
+        if not charge_only and mode is None:
             mode = questionary.select(
                 f"下载 {up_info.name} 的:",
                 choices=[
@@ -142,33 +142,42 @@ def _handle_up_download(
                     questionary.Choice("<<< 上一步 (返回搜索) <<<", value="back"),
                 ],
             ).ask()
-
             if mode is None:
                 return None
             if mode == "back":
                 return "back_to_search"
 
-            if mode == "season":
-                selected = season_view.load_and_select_season_videos(
-                    client, up_info,
-                )
-            else:
-                selected = video_list_view.load_and_select_videos(
-                    client, up_info, charge_only=False,
-                )
-
+        # Step 2b: 按 mode 分流
+        if charge_only:
+            selected = video_list_view.load_and_select_videos(
+                client, up_info, charge_only=True,
+            )
             if selected == "back":
-                continue  # 回到模式选择
+                return "back_to_search"
+        elif mode == "season":
+            selected = season_view.load_and_select_season_videos(
+                client, up_info,
+            )
+            if selected == "back":
+                mode = None  # 回到模式选择
+                continue
+        else:  # mode == "all"
+            selected = video_list_view.load_and_select_videos(
+                client, up_info, charge_only=False,
+            )
+            if selected == "back":
+                mode = None  # 回到模式选择
+                continue
 
         if selected is None or not selected:
             return None
 
-        # Step 3+4 循环（支持上一步回退到选视频）
+        # Step 3+4 循环（下载配置 & 执行）
         result = _handle_download(cfg, history, client, selected, charge_only, up_info)
         if result == "back_to_videos":
-            continue  # 回到视频选择
+            continue  # 回到视频选择 (保持 mode)
         if result == "continue":
-            continue  # 继续下载该 UP 主
+            continue  # 继续下载该 UP 主 (保持 mode)
         return None  # 返回主菜单
 
 

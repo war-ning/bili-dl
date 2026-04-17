@@ -53,7 +53,8 @@ class VideoInfo:
     author_mid: int = 0
     # 合集归属（仅合集下载模式填充；普通模式下为空）
     season_title: str = ""
-    episode_index: int = 0  # 合集内序号，从 1 开始；0 表非合集
+    section_title: str = ""  # 合集内分节名；无分节或 series 时为空
+    episode_index: int = 0  # 合集/节内序号，从 1 开始；0 表非合集
 
 
 @dataclass
@@ -65,6 +66,14 @@ class SeasonInfo:
     cover: str = ""
     total: int = 0
     type: str = "season"  # "season" 或 "series"
+
+
+@dataclass
+class SectionInfo:
+    """合集内分节 (SEASON 类专有)"""
+    section_id: int
+    title: str
+    episode_count: int
 
 
 @dataclass
@@ -111,7 +120,7 @@ class AppConfig:
     cover_blur_radius: int = 40
     merge_pages: bool = False
     filename_template: str = "{title}_{bvid}"
-    season_filename_template: str = "{episode:02d}_{title}_{bvid}"
+    season_filename_template: str = "{title}_{bvid}"
     sessdata: str = ""
     bili_jct: str = ""
     buvid3: str = ""

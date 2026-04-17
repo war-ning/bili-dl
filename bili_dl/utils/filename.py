@@ -31,6 +31,7 @@ def apply_filename_template(
     author: str = "",
     date: str = "",
     season: str = "",
+    section: str = "",
     episode: int = 0,
 ) -> str:
     """根据模板生成文件名
@@ -41,7 +42,8 @@ def apply_filename_template(
         {author}  — UP 主名
         {date}    — 发布日期 (YYYY-MM-DD)
         {season}  — 合集名 (仅合集下载模式)
-        {episode} — 合集内序号，支持格式化 {episode:02d} (仅合集下载模式)
+        {section} — 合集内分节名 (若合集有分节)
+        {episode} — 合集/节内序号，支持格式化 {episode:02d}
     """
     result = template.format(
         title=title,
@@ -49,6 +51,7 @@ def apply_filename_template(
         author=author,
         date=date,
         season=season,
+        section=section,
         episode=episode,
     )
     return sanitize_filename(result)
@@ -63,23 +66,35 @@ def build_file_path(
     template: str = DEFAULT_TEMPLATE,
     date: str = "",
     season: str = "",
+    section: str = "",
     episode: int = 0,
 ) -> Path:
     """构建完整文件路径
 
-    普通模式：download_dir/author_name/<template>.ext
-    合集模式：download_dir/author_name/<season>/<template>.ext
+    普通模式       ：download_dir/author/<template>.ext
+    合集无分节     ：download_dir/author/<season>/<template>.ext
+    合集有分节     ：download_dir/author/<season>/<section>/<template>.ext
+    (season 名若含 U+00B7 "·"，按之拆成多层目录)
     """
     safe_author = sanitize_filename(author_name) or "unknown"
     filename_stem = apply_filename_template(
         template, title=title, bvid=bvid, author=author_name, date=date,
-        season=season, episode=episode,
+        season=season, section=section, episode=episode,
     )
     filename = f"{filename_stem}{ext}"
 
     parent = download_dir / safe_author
     if season:
-        parent = parent / sanitize_filename(season)
+        # B站合集名常以"·"(U+00B7) 分层 (如"中国通史·夏商周")，
+        # 按"·"拆成多级目录，各级分别清洗
+        for part in season.split("·"):
+            part = sanitize_filename(part)
+            if part:
+                parent = parent / part
+    if section:
+        safe_section = sanitize_filename(section)
+        if safe_section:
+            parent = parent / safe_section
 
     full_path = parent / filename
 

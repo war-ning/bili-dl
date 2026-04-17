@@ -50,3 +50,28 @@ class BiliClient:
         if not self._credential:
             return 32  # 480P
         return self._config.preferred_quality or 80  # 默认 1080P
+
+
+# B站风控常见错误码；触发则退避重试
+_RISK_HINTS = ("412", "-352", "-403", "风控")
+_RETRY_DELAYS = (3, 6, 12)  # 秒
+
+
+def is_risk_error(e: BaseException) -> bool:
+    msg = str(e)
+    return any(h in msg for h in _RISK_HINTS)
+
+
+async def with_risk_retry(coro_factory, op_name: str = "接口"):
+    """对 B站风控错误 (412/-352) 指数退避重试；其他异常立即抛"""
+    last_err: BaseException | None = None
+    for delay in (*_RETRY_DELAYS, None):
+        try:
+            return await coro_factory()
+        except Exception as e:
+            last_err = e
+            if not is_risk_error(e) or delay is None:
+                raise
+            await asyncio.sleep(delay)
+    if last_err:
+        raise last_err

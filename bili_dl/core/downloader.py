@@ -145,16 +145,16 @@ class BatchDownloader:
         title = vi.title
         if suffix:
             title = f"{vi.title}_{suffix}"
-        in_season = bool(getattr(vi, "season_title", "") or "")
         template = (
-            self._season_filename_template if in_season
+            self._season_filename_template if vi.season_title
             else self._filename_template
         )
         return build_file_path(
             self._download_dir, vi.author_name, title, vi.bvid, ext,
             template=template, date=date,
-            season=getattr(vi, "season_title", "") or "",
-            episode=getattr(vi, "episode_index", 0) or 0,
+            season=vi.season_title,
+            section=vi.section_title,
+            episode=vi.episode_index,
         )
 
     def cancel(self) -> None:

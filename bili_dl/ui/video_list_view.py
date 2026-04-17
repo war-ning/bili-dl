@@ -12,6 +12,7 @@ from ..api.client import BiliClient
 from ..api.user import get_all_user_videos
 from ..models import UPInfo, VideoInfo
 from ..utils.async_helper import run_async
+from ..utils.errors import friendly_err
 from ..utils.formatter import format_count, format_duration
 from ..utils.time_utils import timestamp_to_str
 
@@ -40,7 +41,7 @@ def load_and_select_videos(
             get_all_user_videos(client, up_info.mid)
         )
     except Exception as e:
-        console.print(f"[red]加载失败: {e}")
+        console.print(f"[red]加载失败: {friendly_err(e)}")
         return None
 
     if not all_videos:
@@ -144,9 +145,12 @@ def paginated_select(
                 title=title, value=v, checked=(v.bvid in selected_map),
             ))
 
+        choices.append(
+            questionary.Choice(title="--- 全选本页 ---", value="select_all")
+        )
         if total_pages > 1:
             choices.append(
-                questionary.Choice(title="--- 全选本页 ---", value="select_all")
+                questionary.Choice(title="=== 全选所有页 ===", value="select_all_pages")
             )
         if current_page < total_pages - 1:
             choices.append(
@@ -174,8 +178,15 @@ def paginated_select(
 
         page_selected = [v for v in result if isinstance(v, VideoInfo)]
         has_select_all = "select_all" in result
+        has_select_all_pages = "select_all_pages" in result
         has_next = "next" in result
         has_prev = "prev" in result
+
+        if has_select_all_pages:
+            # 全选所有页：把整个列表入 selected_map，立即确认
+            for v in display_videos:
+                selected_map[v.bvid] = v
+            break
 
         if has_select_all:
             page_selected = list(page_videos)
