@@ -30,20 +30,26 @@ def apply_filename_template(
     bvid: str,
     author: str = "",
     date: str = "",
+    season: str = "",
+    episode: int = 0,
 ) -> str:
     """根据模板生成文件名
 
     支持的变量:
-        {title}  — 视频标题
-        {bvid}   — BV 号
-        {author} — UP 主名
-        {date}   — 发布日期 (YYYY-MM-DD)
+        {title}   — 视频标题
+        {bvid}    — BV 号
+        {author}  — UP 主名
+        {date}    — 发布日期 (YYYY-MM-DD)
+        {season}  — 合集名 (仅合集下载模式)
+        {episode} — 合集内序号，支持格式化 {episode:02d} (仅合集下载模式)
     """
     result = template.format(
         title=title,
         bvid=bvid,
         author=author,
         date=date,
+        season=season,
+        episode=episode,
     )
     return sanitize_filename(result)
 
@@ -56,27 +62,38 @@ def build_file_path(
     ext: str,
     template: str = DEFAULT_TEMPLATE,
     date: str = "",
+    season: str = "",
+    episode: int = 0,
 ) -> Path:
-    """构建完整文件路径: download_dir/author_name/<template>.ext"""
+    """构建完整文件路径
+
+    普通模式：download_dir/author_name/<template>.ext
+    合集模式：download_dir/author_name/<season>/<template>.ext
+    """
     safe_author = sanitize_filename(author_name) or "unknown"
     filename_stem = apply_filename_template(
         template, title=title, bvid=bvid, author=author_name, date=date,
+        season=season, episode=episode,
     )
     filename = f"{filename_stem}{ext}"
 
-    full_path = download_dir / safe_author / filename
+    parent = download_dir / safe_author
+    if season:
+        parent = parent / sanitize_filename(season)
+
+    full_path = parent / filename
 
     # Windows 路径长度检查
     if sys.platform == "win32" and len(str(full_path)) > 250:
         # 回退到截断标题 + bvid
         safe_title = sanitize_filename(title)
-        max_title = 250 - len(str(download_dir / safe_author / f"_{bvid}{ext}"))
+        max_title = 250 - len(str(parent / f"_{bvid}{ext}"))
         if max_title > 10:
             safe_title = safe_title[:max_title].rstrip("_. ")
         else:
             safe_title = safe_title[:10]
         filename = f"{safe_title}_{bvid}{ext}"
-        full_path = download_dir / safe_author / filename
+        full_path = parent / filename
 
     return ensure_unique_path(full_path)
 

@@ -79,7 +79,21 @@ def load_and_select_videos(
             console.print("[yellow]过滤后没有可选视频")
             return None
 
-    # 分批多选（用 dict 按 bvid 去重，保持顺序）
+    result = paginated_select(display_videos, back_label="<<< 上一步 (重新搜索) <<<")
+    return result
+
+
+def paginated_select(
+    display_videos: list[VideoInfo],
+    back_label: str = "<<< 上一步 <<<",
+) -> list[VideoInfo] | str | None:
+    """分页多选视频；外部共用
+
+    Returns:
+        list[VideoInfo]: 选中的视频
+        "back": 上一步
+        None: 用户取消
+    """
     selected_map: dict[str, VideoInfo] = {}
     total_pages = (len(display_videos) + PAGE_SIZE - 1) // PAGE_SIZE
     current_page = 0
@@ -89,7 +103,6 @@ def load_and_select_videos(
         end = min(start + PAGE_SIZE, len(display_videos))
         page_videos = display_videos[start:end]
 
-        # 显示当前页表格
         selected_hint = f"  已选: {len(selected_map)}" if selected_map else ""
         table = Table(
             title=f"第 {current_page + 1}/{total_pages} 页 "
@@ -119,7 +132,6 @@ def load_and_select_videos(
 
         console.print(table)
 
-        # 构建 checkbox 选项（已选的默认勾上）
         choices = []
         for i, v in enumerate(page_videos, start + 1):
             charge_tag = "[充电] " if v.is_charge_plus else ""
@@ -132,7 +144,6 @@ def load_and_select_videos(
                 title=title, value=v, checked=(v.bvid in selected_map),
             ))
 
-        # 导航选项
         if total_pages > 1:
             choices.append(
                 questionary.Choice(title="--- 全选本页 ---", value="select_all")
@@ -146,7 +157,7 @@ def load_and_select_videos(
                 questionary.Choice(title="<<< 上一页 <<<", value="prev")
             )
         choices.append(
-            questionary.Choice(title="<<< 上一步 (重新搜索) <<<", value="back")
+            questionary.Choice(title=back_label, value="back")
         )
 
         prompt = "选择要下载的视频 (空格选择, 回车确认):"
@@ -169,14 +180,13 @@ def load_and_select_videos(
         if has_select_all:
             page_selected = list(page_videos)
 
-        # 更新选择：先移除本页取消勾选的，再添加新勾选的
         page_bvids = {v.bvid for v in page_videos}
         selected_bvids_this_page = {v.bvid for v in page_selected}
         for bvid in page_bvids:
             if bvid not in selected_bvids_this_page:
-                selected_map.pop(bvid, None)  # 取消勾选
+                selected_map.pop(bvid, None)
         for v in page_selected:
-            selected_map[v.bvid] = v  # 添加勾选
+            selected_map[v.bvid] = v
 
         if has_next and current_page < total_pages - 1:
             current_page += 1
@@ -185,7 +195,6 @@ def load_and_select_videos(
             current_page -= 1
             continue
 
-        # 确认选择结果
         if not selected_map:
             console.print("[yellow]未选择任何视频")
             retry = questionary.confirm("重新选择?", default=True).ask()

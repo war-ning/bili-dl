@@ -15,6 +15,7 @@ from . import (
     download_progress_view,
     history_view,
     search_view,
+    season_view,
     settings_view,
     video_list_view,
 )
@@ -126,11 +127,39 @@ def _handle_up_download(
 
     while True:
         # Step 2: 选择视频
-        selected = video_list_view.load_and_select_videos(
-            client, up_info, charge_only=charge_only
-        )
-        if selected == "back":
-            return "back_to_search"
+        if charge_only:
+            selected = video_list_view.load_and_select_videos(
+                client, up_info, charge_only=True,
+            )
+            if selected == "back":
+                return "back_to_search"
+        else:
+            mode = questionary.select(
+                f"下载 {up_info.name} 的:",
+                choices=[
+                    questionary.Choice("全部视频", value="all"),
+                    questionary.Choice("按合集下载", value="season"),
+                    questionary.Choice("<<< 上一步 (返回搜索) <<<", value="back"),
+                ],
+            ).ask()
+
+            if mode is None:
+                return None
+            if mode == "back":
+                return "back_to_search"
+
+            if mode == "season":
+                selected = season_view.load_and_select_season_videos(
+                    client, up_info,
+                )
+            else:
+                selected = video_list_view.load_and_select_videos(
+                    client, up_info, charge_only=False,
+                )
+
+            if selected == "back":
+                continue  # 回到模式选择
+
         if selected is None or not selected:
             return None
 

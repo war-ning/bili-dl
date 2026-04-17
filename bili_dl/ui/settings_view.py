@@ -52,6 +52,7 @@ def show_settings(config_mgr: ConfigManager) -> None:
         table.add_row("模糊半径", str(cfg.cover_blur_radius))
         table.add_row("多分P处理", "合并为一个文件" if cfg.merge_pages else "每P单独保存")
         table.add_row("文件命名模板", cfg.filename_template)
+        table.add_row("合集命名模板", cfg.season_filename_template)
         table.add_row(
             "Cookie (SESSDATA)",
             f"{cfg.sessdata[:20]}..." if cfg.sessdata else "[red]未设置[/red]",
@@ -69,6 +70,7 @@ def show_settings(config_mgr: ConfigManager) -> None:
                 questionary.Choice("封面填充颜色 (RGB)", value="cover_color"),
                 questionary.Choice("多分P处理", value="merge_pages"),
                 questionary.Choice("文件命名模板", value="filename_template"),
+                questionary.Choice("合集命名模板", value="season_template"),
                 questionary.Choice("Cookie 设置", value="cookie"),
                 questionary.Choice("返回主菜单", value="back"),
             ],
@@ -181,10 +183,41 @@ def show_settings(config_mgr: ConfigManager) -> None:
             if tpl and tpl.strip():
                 # 验证模板是否合法
                 try:
-                    tpl.strip().format(title="test", bvid="BV1xxx", author="UP", date="2026-01-01")
+                    tpl.strip().format(
+                        title="test", bvid="BV1xxx", author="UP",
+                        date="2026-01-01", season="s", episode=1,
+                    )
                     cfg.filename_template = tpl.strip()
                     config_mgr.save(cfg)
                     console.print("[green]已更新文件命名模板")
+                except (KeyError, ValueError) as e:
+                    console.print(f"[red]模板格式错误: {e}")
+
+        elif action == "season_template":
+            console.print(
+                "\n[cyan]合集模式下的文件命名模板。可用变量:[/cyan]\n"
+                "  {title}   — 视频标题\n"
+                "  {bvid}    — BV 号\n"
+                "  {author}  — UP 主名\n"
+                "  {date}    — 发布日期 (YYYY-MM-DD)\n"
+                "  {season}  — 合集名 (子目录已自动用此名)\n"
+                "  {episode} — 合集内序号，可格式化如 {episode:02d}\n"
+                "\n[dim]示例: {episode:02d}_{title}_{bvid}, "
+                "{episode:03d}_{title}[/dim]\n"
+            )
+            tpl = questionary.text(
+                "合集命名模板:",
+                default=cfg.season_filename_template,
+            ).ask()
+            if tpl and tpl.strip():
+                try:
+                    tpl.strip().format(
+                        title="test", bvid="BV1xxx", author="UP",
+                        date="2026-01-01", season="s", episode=1,
+                    )
+                    cfg.season_filename_template = tpl.strip()
+                    config_mgr.save(cfg)
+                    console.print("[green]已更新合集命名模板")
                 except (KeyError, ValueError) as e:
                     console.print(f"[red]模板格式错误: {e}")
 

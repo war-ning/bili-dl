@@ -128,17 +128,33 @@ class BatchDownloader:
         self._cover_proc = CoverProcessor()
         self._download_dir = Path(config.download_dir)
         self._filename_template = config.filename_template or "{title}_{bvid}"
+        self._season_filename_template = (
+            config.season_filename_template or "{episode:02d}_{title}_{bvid}"
+        )
         self._cancelled = False
 
     def _build_path(self, vi, ext: str, suffix: str = "") -> Path:
-        """统一构建输出路径"""
+        """统一构建输出路径
+
+        合集模式 (vi.season_title 非空)：
+          download_dir/author/season_title/<season_template>.ext
+        普通模式：
+          download_dir/author/<template>.ext
+        """
         date = timestamp_to_str(vi.publish_time, "%Y-%m-%d") if vi.publish_time else ""
         title = vi.title
         if suffix:
             title = f"{vi.title}_{suffix}"
+        in_season = bool(getattr(vi, "season_title", "") or "")
+        template = (
+            self._season_filename_template if in_season
+            else self._filename_template
+        )
         return build_file_path(
             self._download_dir, vi.author_name, title, vi.bvid, ext,
-            template=self._filename_template, date=date,
+            template=template, date=date,
+            season=getattr(vi, "season_title", "") or "",
+            episode=getattr(vi, "episode_index", 0) or 0,
         )
 
     def cancel(self) -> None:
