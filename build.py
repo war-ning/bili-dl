@@ -204,13 +204,11 @@ def main():
     if version_file and os.path.exists(version_file):
         os.remove(version_file)
 
-    # 复制 ffmpeg 至 dist/（PyAV mux 有 bug，视频合并依赖 FFmpeg）
+    # 将 ffmpeg 打入 exe 内部（PyAV mux 有 bug，视频合并依赖 FFmpeg）
     ffmpeg_src = shutil.which("ffmpeg")
     if ffmpeg_src:
-        ffmpeg_dst = os.path.join("dist", f"ffmpeg{ext}")
-        if os.path.abspath(ffmpeg_src) != os.path.abspath(ffmpeg_dst):
-            shutil.copy2(ffmpeg_src, ffmpeg_dst)
-            print(f"已复制 ffmpeg 至 {ffmpeg_dst}")
+        cmd.insert(-1, "--add-binary")
+        cmd.insert(-1, f"{ffmpeg_src}{os.pathsep}.")
 
 
 if __name__ == "__main__":

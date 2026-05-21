@@ -19,19 +19,26 @@ from ..exceptions import MergeError
 
 def _find_ffmpeg() -> str | None:
     """查找可用 ffmpeg 的路径"""
-    # 1. exe 同目录下的 ffmpeg.exe
+    name = "ffmpeg.exe" if os.name == "nt" else "ffmpeg"
+    # 1. PyInstaller 打包内（sys._MEIPASS 临时解压目录）
     if getattr(sys, "frozen", False):
+        meipass = getattr(sys, "_MEIPASS", "")
+        if meipass:
+            bundled = Path(meipass) / name
+            if bundled.exists():
+                return str(bundled)
+        # 2. exe 同目录（手动放置）
         exe_dir = Path(sys.executable).parent
-        bundled = exe_dir / "ffmpeg.exe"
+        bundled = exe_dir / name
         if bundled.exists():
             return str(bundled)
-    # 2. PATH 中的 ffmpeg
+    # 3. PATH
     for path in os.environ.get("PATH", "").split(os.pathsep):
-        candidate = Path(path) / ("ffmpeg.exe" if os.name == "nt" else "ffmpeg")
+        candidate = Path(path) / name
         if candidate.exists():
             return str(candidate)
-    # 3. shutil.which
-    found = shutil.which("ffmpeg")
+    # 4. shutil.which
+    found = shutil.which(name)
     return found
 
 
@@ -97,7 +104,10 @@ class VideoMerger:
             "-c", "copy", "-movflags", "+faststart",
             str(output_path),
         ]
-        r = subprocess.run(cmd, capture_output=True, text=True)
+        r = subprocess.run(
+            cmd, capture_output=True, text=True,
+            encoding="utf-8", errors="replace",
+        )
         if r.returncode != 0:
             raise MergeError(f"FFmpeg 合并失败: {r.stderr[-300:]}")
 
@@ -109,7 +119,10 @@ class VideoMerger:
             "-c", "copy", "-movflags", "+faststart",
             str(output_path),
         ]
-        r = subprocess.run(cmd, capture_output=True, text=True)
+        r = subprocess.run(
+            cmd, capture_output=True, text=True,
+            encoding="utf-8", errors="replace",
+        )
         if r.returncode != 0:
             raise MergeError(f"FFmpeg 转封装失败: {r.stderr[-300:]}")
 
@@ -127,7 +140,10 @@ class VideoMerger:
             "-i", str(concat_list),
             "-c", "copy", str(output_path),
         ]
-        r = subprocess.run(cmd, capture_output=True, text=True)
+        r = subprocess.run(
+            cmd, capture_output=True, text=True,
+            encoding="utf-8", errors="replace",
+        )
         concat_list.unlink(missing_ok=True)
         if r.returncode != 0:
             raise MergeError(f"FFmpeg 拼接失败: {r.stderr[-300:]}")
