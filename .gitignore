@@ -9,4 +9,6 @@ downloads/
 *.spec
 dist/
 build/
+.idea/
+.claude/
 .DS_Store
