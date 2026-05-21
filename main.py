@@ -11,6 +11,7 @@ from bili_dl import __version__
 from bili_dl.config import ConfigManager
 from bili_dl.ui.app import main_loop
 from bili_dl.utils.async_helper import cleanup
+from bili_dl.utils.file_checker import check_video_file
 
 console = Console()
 
@@ -134,6 +135,14 @@ def main() -> None:
 if __name__ == "__main__":
     if "--version" in sys.argv or "-V" in sys.argv:
         print(f"bili-dl v{__version__}")
+        sys.exit(0)
+
+    if "--check-video" in sys.argv:
+        idx = sys.argv.index("--check-video")
+        if idx + 1 < len(sys.argv):
+            check_video_file(sys.argv[idx + 1])
+        else:
+            print("用法: bili-dl --check-video <文件路径>")
         sys.exit(0)
 
     try:

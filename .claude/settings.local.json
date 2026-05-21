@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python3 *)",
+      "Bash(pip show *)",
+      "Bash(pip install *)",
+      "Bash(gh api *)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "WebFetch(domain:api.bilibili.com)",
+      "Bash(python -c \"import bilibili_api; print\\(bilibili_api.__file__\\)\")",
+      "Bash(D:/project/MyDemo/bili-dl/venv/Scripts/python.exe *)",
+      "Bash(./venv/Scripts/python.exe -c ' *)"
+    ]
+  }
+}

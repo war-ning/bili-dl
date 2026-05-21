@@ -105,13 +105,14 @@ def main():
     clean = "--clean" in sys.argv
 
     if clean:
-        for d in ["build", "dist"]:
+        for d in ["build"]:
             if os.path.exists(d):
                 shutil.rmtree(d)
                 print(f"已清理 {d}/")
-        for f in ["bili-dl.spec"]:
-            if os.path.exists(f):
+        for f in os.listdir("."):
+            if f.endswith(".spec"):
                 os.remove(f)
+                print(f"已清理 {f}")
 
     check_dependencies()
 

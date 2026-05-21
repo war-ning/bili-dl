@@ -54,36 +54,38 @@ async def get_best_streams(
     data = await get_download_url(client, bvid, cid)
 
     dash = data.get("dash")
-    if not dash:
-        durl = data.get("durl", [])
-        if durl:
-            urls = [s.get("url", "") for s in durl if s.get("url")]
-            if urls:
-                return {
-                    "url": urls[0],
-                    "urls": urls,
-                    "type": "flv",
-                }, None
+    durl = data.get("durl", [])
+
+    # 若 dash 缺失或其视频流为空，回退到 durl（合流/FLV）
+    video_streams = (dash or {}).get("video", []) if dash else []
+    if not video_streams and durl:
+        urls = [s.get("url", "") for s in durl if s.get("url")]
+        if urls:
+            return {
+                "url": urls[0],
+                "urls": urls,
+                "type": "flv",
+            }, None
+        return None, None
+
+    if not video_streams:
         return None, None
 
     # 选最高质量视频流
-    video_streams = dash.get("video", [])
-    best_video = None
-    if video_streams:
-        sorted_vs = sorted(video_streams, key=lambda x: x.get("bandwidth", 0), reverse=True)
-        vs = sorted_vs[0]
-        best_video = {
-            "url": vs.get("base_url") or vs.get("baseUrl", ""),
-            "backup_url": vs.get("backup_url") or vs.get("backupUrl", []),
-            "bandwidth": vs.get("bandwidth", 0),
-            "codecs": vs.get("codecs", ""),
-            "width": vs.get("width", 0),
-            "height": vs.get("height", 0),
-            "quality": vs.get("id", 0),
-        }
+    sorted_vs = sorted(video_streams, key=lambda x: x.get("bandwidth", 0), reverse=True)
+    vs = sorted_vs[0]
+    best_video = {
+        "url": vs.get("base_url") or vs.get("baseUrl", ""),
+        "backup_url": vs.get("backup_url") or vs.get("backupUrl", []),
+        "bandwidth": vs.get("bandwidth", 0),
+        "codecs": vs.get("codecs", ""),
+        "width": vs.get("width", 0),
+        "height": vs.get("height", 0),
+        "quality": vs.get("id", 0),
+    }
 
     # 选最高质量音频流
-    audio_streams = dash.get("audio", [])
+    audio_streams = dash.get("audio", []) if dash else []
     best_audio = None
     if audio_streams:
         sorted_as = sorted(audio_streams, key=lambda x: x.get("bandwidth", 0), reverse=True)
