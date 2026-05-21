@@ -117,6 +117,7 @@ def main():
     check_dependencies()
 
     system = platform.system().lower()
+    ext = ".exe" if system == "windows" else ""
     ver_tuple = _parse_version(__version__)
     exe_name = f"bili-dl_v{__version__}"
 
@@ -124,6 +125,16 @@ def main():
     version_file = None
     if system == "windows":
         version_file = _write_version_file(ver_tuple)
+
+    # 将 ffmpeg 打入 exe 内部（PyAV mux 有 bug，视频合并依赖 FFmpeg）
+    ffmpeg_src = None
+    existing = os.path.join("dist", f"ffmpeg{ext}")
+    if os.path.exists(existing):
+        ffmpeg_src = os.path.abspath(existing)
+    if not ffmpeg_src:
+        found = shutil.which("ffmpeg")
+        if found:
+            ffmpeg_src = os.path.abspath(found)
 
     cmd = [
         sys.executable, "-m", "PyInstaller",
@@ -150,6 +161,10 @@ def main():
         "--collect-all", "qrcode",
         "--collect-all", "qrcode_terminal",
     ]
+
+    # ffmpeg 打入 exe
+    if ffmpeg_src:
+        cmd.extend(["--add-binary", f"{ffmpeg_src}{os.pathsep}."])
 
     # PyAV: 在不同平台上收集方式不同
     # av 可能是 .so/.pyd 扩展模块而非 package，collect-all 会跳过
@@ -178,11 +193,6 @@ def main():
     except Exception:
         pass
 
-    # 将 ffmpeg 打入 exe 内部（PyAV mux 有 bug，视频合并依赖 FFmpeg）
-    ffmpeg_src = shutil.which("ffmpeg")
-    if ffmpeg_src:
-        cmd.extend(["--add-binary", f"{ffmpeg_src}{os.pathsep}."])
-
     if version_file:
         cmd.extend(["--version-file", version_file])
 
@@ -196,7 +206,6 @@ def main():
         print("\n打包失败!")
         sys.exit(1)
 
-    ext = ".exe" if system == "windows" else ""
     output = os.path.join("dist", f"{exe_name}{ext}")
 
     size_mb = os.path.getsize(output) / (1024 * 1024)
