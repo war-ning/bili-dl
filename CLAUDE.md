@@ -48,7 +48,7 @@ Download progress view has built-in retry: failed tasks can be retried immediate
 
 ## Important Conventions
 
-- **版本号** — 每次修改代码后，须递增 `bili_dl/__init__.py` 中的 `__version__`（至少 patch 位 +1），并 `git commit` 所有变更。版本号遵循 `MAJOR.MINOR.PATCH`，当前为 0.x 阶段，patch 每次修改递增。
+- **版本号** — 每次修改代码后，须递增 `bili_dl/__init__.py` 中的 `__version__`（至少 patch 位 +1），`git commit` 所有变更，并运行 `python3 build.py` 重新打包。版本号遵循 `MAJOR.MINOR.PATCH`，当前为 0.x 阶段，patch 每次修改递增。
 - All file operations set mtime to the video's publish timestamp (`set_file_mtime`).
 - File paths: `<download_dir>/<UP主名>/<template>.<ext>`, sanitized by `utils/filename.py`. Template configurable via `AppConfig.filename_template`.
 - History uses atomic JSON writes (write to .tmp then `os.replace`).
