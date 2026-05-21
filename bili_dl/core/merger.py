@@ -1,4 +1,9 @@
-"""PyAV 视频/音频流合并与拼接"""
+"""PyAV 视频/音频流合并与拼接
+
+PyAV 17+ 关键约束：设 width/height/rate 等属性会触发 codec 开启，
+extradata（H.264 之 SPS/PPS）须先于此等属性设置，否则无效，
+导致输出有音无画。
+"""
 
 from pathlib import Path
 
@@ -20,33 +25,36 @@ class VideoMerger:
 
             stream_map = {}
             for in_stream in inp.streams:
-                if in_stream.type in ("video", "audio"):
-                    out_stream = out.add_stream(in_stream.codec_context.name)
-                    # 复制关键 codec context 参数（不复制 time_base，
-                    # 交由 PyAV 根据 MP4 容器自动设定，避免时间戳错乱）
-                    ctx = in_stream.codec_context
-                    if in_stream.type == "video":
-                        out_stream.width = ctx.width
-                        out_stream.height = ctx.height
-                        if getattr(ctx, "pix_fmt", None) is not None:
-                            out_stream.pix_fmt = ctx.pix_fmt
-                    elif in_stream.type == "audio":
-                        if getattr(ctx, "rate", None) is not None:
-                            out_stream.rate = ctx.rate
-                        if getattr(ctx, "channels", None) is not None:
-                            out_stream.channels = ctx.channels
-                        if getattr(ctx, "layout", None) is not None:
-                            out_stream.layout = ctx.layout
-                    if ctx.extradata:
-                        out_stream.codec_context.extradata = ctx.extradata
-                    stream_map[in_stream.index] = out_stream
+                if in_stream.type not in ("video", "audio"):
+                    continue
+                ctx = in_stream.codec_context
+                out_stream = out.add_stream(ctx.name)
+
+                # extradata 必须先设！width/height/rate 会触发 codec open
+                if ctx.extradata:
+                    out_stream.codec_context.extradata = ctx.extradata
+
+                if in_stream.type == "video":
+                    out_stream.width = ctx.width
+                    out_stream.height = ctx.height
+                    if getattr(ctx, "pix_fmt", None) is not None:
+                        out_stream.pix_fmt = ctx.pix_fmt
+                elif in_stream.type == "audio":
+                    if getattr(ctx, "rate", None) is not None:
+                        out_stream.rate = ctx.rate
+                    if getattr(ctx, "channels", None) is not None:
+                        out_stream.channels = ctx.channels
+                    if hasattr(ctx, "layout") and ctx.layout is not None:
+                        out_stream.layout = ctx.layout
+
+                stream_map[in_stream.index] = out_stream
 
             for packet in inp.demux():
                 if packet.dts is None:
                     continue
-                if packet.stream.index not in stream_map:
+                out_stream = stream_map.get(packet.stream.index)
+                if out_stream is None:
                     continue
-                out_stream = stream_map[packet.stream.index]
                 packet.stream = out_stream
                 out.mux(packet)
 
@@ -81,19 +89,23 @@ class VideoMerger:
 
             in_v_stream = input_video.streams.video[0]
             in_a_stream = input_audio.streams.audio[0]
+            v_ctx = in_v_stream.codec_context
+            a_ctx = in_a_stream.codec_context
 
-            out_v_stream = output.add_stream(in_v_stream.codec_context.name)
-            out_v_stream.width = in_v_stream.codec_context.width
-            out_v_stream.height = in_v_stream.codec_context.height
-            if in_v_stream.codec_context.extradata:
-                out_v_stream.codec_context.extradata = in_v_stream.codec_context.extradata
+            # --- video stream ---
+            out_v_stream = output.add_stream(v_ctx.name)
+            # extradata 必须先设！
+            if v_ctx.extradata:
+                out_v_stream.codec_context.extradata = v_ctx.extradata
+            out_v_stream.width = v_ctx.width
+            out_v_stream.height = v_ctx.height
 
-            out_a_stream = output.add_stream(
-                in_a_stream.codec_context.name,
-                rate=in_a_stream.codec_context.rate,
-            )
-            if in_a_stream.codec_context.extradata:
-                out_a_stream.codec_context.extradata = in_a_stream.codec_context.extradata
+            # --- audio stream ---
+            out_a_stream = output.add_stream(a_ctx.name)
+            # extradata 必须先设！
+            if a_ctx.extradata:
+                out_a_stream.codec_context.extradata = a_ctx.extradata
+            out_a_stream.rate = a_ctx.rate
 
             for packet in input_video.demux(in_v_stream):
                 if packet.dts is None:
@@ -140,7 +152,6 @@ class VideoMerger:
         inputs = []
 
         try:
-            # 用第一个文件初始化输出流参数
             first = av.open(str(input_paths[0]))
             inputs.append(first)
 
@@ -154,25 +165,24 @@ class VideoMerger:
 
             if has_video:
                 in_vs = first.streams.video[0]
-                out_vs = output.add_stream(in_vs.codec_context.name)
-                out_vs.width = in_vs.codec_context.width
-                out_vs.height = in_vs.codec_context.height
-                if in_vs.codec_context.extradata:
-                    out_vs.codec_context.extradata = in_vs.codec_context.extradata
+                v_ctx = in_vs.codec_context
+                out_vs = output.add_stream(v_ctx.name)
+                if v_ctx.extradata:
+                    out_vs.codec_context.extradata = v_ctx.extradata
+                out_vs.width = v_ctx.width
+                out_vs.height = v_ctx.height
 
             if has_audio:
                 in_as = first.streams.audio[0]
-                out_as = output.add_stream(
-                    in_as.codec_context.name,
-                    rate=in_as.codec_context.rate,
-                )
-                if in_as.codec_context.extradata:
-                    out_as.codec_context.extradata = in_as.codec_context.extradata
+                a_ctx = in_as.codec_context
+                out_as = output.add_stream(a_ctx.name)
+                if a_ctx.extradata:
+                    out_as.codec_context.extradata = a_ctx.extradata
+                out_as.rate = a_ctx.rate
 
             first.close()
             inputs.clear()
 
-            # 逐文件拼接，调整 PTS/DTS 偏移
             v_offset = 0
             a_offset = 0
 
@@ -252,12 +262,11 @@ class VideoMerger:
             output = av.open(str(output_path), "w", format=output_format)
 
             in_as = first.streams.audio[0]
-            out_as = output.add_stream(
-                in_as.codec_context.name,
-                rate=in_as.codec_context.rate,
-            )
-            if in_as.codec_context.extradata:
-                out_as.codec_context.extradata = in_as.codec_context.extradata
+            a_ctx = in_as.codec_context
+            out_as = output.add_stream(a_ctx.name)
+            if a_ctx.extradata:
+                out_as.codec_context.extradata = a_ctx.extradata
+            out_as.rate = a_ctx.rate
 
             first.close()
             inputs.clear()
