@@ -32,7 +32,7 @@ Wraps `bilibili-api-python`. Every function calls `client.throttle()` first for 
 ### Core Layer (`core/`)
 - **downloader.py**: `BatchDownloader` uses `asyncio.Semaphore` for concurrency + retry logic (2 retries, exponential backoff). Supports cancellation via `_cancelled` flag.
 - **Multi-page videos**: `_download_video`/`_download_audio` call `_get_pages()` to detect page count. Single P → direct download. Multi P → loop through pages, each saved as `标题_P1_分P名_BV号.ext`. The `is_single` parameter controls whether `_download_single_video`/`_download_single_audio` sets task completion status (only in single P mode; multi P sets it after the loop).
-- **Video download flow**: DASH streams downloaded separately → PyAV remux merge → MP4. Fallback: durl (FLV) direct download.
+- **Video download flow**: DASH streams downloaded separately → PyAV remux merge → MP4. Fallback: durl (FLV) → download → PyAV remux_to_mp4 → MP4.
 - **Audio flow**: DASH audio → convert_to_mp3() or remux_to_m4a(). durl fallback → extract_audio() first, then convert/remux. `convert_to_mp3()` returns actual Path (may be .m4a if MP3 codec unavailable).
 - **Duration check**: After download, `_check_duration()` compares actual vs expected duration. Only runs for single P (multi P would false-positive since each P is shorter than total).
 - **CPU-bound ops in thread pool**: `merger.merge()`, `convert_to_mp3()`, `cover_proc.process()`, `write_id3_tags()` all use `asyncio.to_thread()` to avoid blocking the event loop.
@@ -48,6 +48,7 @@ Download progress view has built-in retry: failed tasks can be retried immediate
 
 ## Important Conventions
 
+- **版本号** — 每次修改代码后，须递增 `bili_dl/__init__.py` 中的 `__version__`（至少 patch 位 +1），并 `git commit` 所有变更。版本号遵循 `MAJOR.MINOR.PATCH`，当前为 0.x 阶段，patch 每次修改递增。
 - All file operations set mtime to the video's publish timestamp (`set_file_mtime`).
 - File paths: `<download_dir>/<UP主名>/<template>.<ext>`, sanitized by `utils/filename.py`. Template configurable via `AppConfig.filename_template`.
 - History uses atomic JSON writes (write to .tmp then `os.replace`).

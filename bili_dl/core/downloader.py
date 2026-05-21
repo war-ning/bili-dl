@@ -342,7 +342,10 @@ class BatchDownloader:
         )
 
         if not video_stream:
-            raise BiliDLError(f"无法获取视频流 (cid={cid})")
+            hint = ""
+            if vi.is_charge_plus:
+                hint = "；充电视频需已为该 UP 主充电且 Cookie 有效（含 bili_jct）"
+            raise BiliDLError(f"无法获取视频流 (cid={cid}){hint}")
 
         output_path.parent.mkdir(parents=True, exist_ok=True)
         temp_dir = self._download_dir / ".tmp" / f"{vi.bvid}_{cid}_video"
@@ -350,19 +353,74 @@ class BatchDownloader:
 
         video_tmp = temp_dir / f"{vi.bvid}_v.m4s"
         audio_tmp = temp_dir / f"{vi.bvid}_a.m4s"
+        flv_tmp = temp_dir / f"{vi.bvid}.flv"
 
         progress_range = progress_end - progress_start
 
         try:
             if video_stream.get("type") == "flv":
-                def flv_progress(downloaded: int, total: int, speed: float) -> None:
-                    p = (downloaded / total) if total > 0 else 0
-                    task.progress = progress_start + p * progress_range
-                    task.speed = speed
-                    if on_progress:
-                        on_progress(task)
+                # durl 合流：FLV 容器，需 remux 为 MP4 方可正常播放
+                durl_urls = video_stream.get("urls", [video_stream["url"]])
 
-                await stream_download(video_stream["url"], output_path, flv_progress)
+                if len(durl_urls) == 1:
+                    def flv_progress(downloaded: int, total: int, speed: float) -> None:
+                        p = (downloaded / total) if total > 0 else 0
+                        task.progress = progress_start + p * progress_range * 0.85
+                        task.speed = speed
+                        if on_progress:
+                            on_progress(task)
+
+                    await stream_download(durl_urls[0], flv_tmp, flv_progress)
+                else:
+                    seg_dir = temp_dir / "durl_segments"
+                    seg_dir.mkdir(parents=True, exist_ok=True)
+                    seg_paths: list[Path] = []
+                    try:
+                        total_segs = len(durl_urls)
+                        for idx, url in enumerate(durl_urls):
+                            seg_path = seg_dir / f"seg_{idx:03d}.flv"
+                            seg_progress_start = progress_start + (idx / total_segs) * progress_range * 0.85
+                            seg_progress_end = progress_start + ((idx + 1) / total_segs) * progress_range * 0.85
+
+                            def make_progress(p_start, p_end):
+                                def seg_progress(downloaded: int, total: int, speed: float) -> None:
+                                    p = (downloaded / total) if total > 0 else 0
+                                    task.progress = p_start + p * (p_end - p_start)
+                                    task.speed = speed
+                                    if on_progress:
+                                        on_progress(task)
+                                return seg_progress
+
+                            await stream_download(url, seg_path, make_progress(seg_progress_start, seg_progress_end))
+                            seg_paths.append(seg_path)
+
+                        # 拼接所有段为临时 FLV
+                        task.progress = progress_start + 0.85 * progress_range
+                        if on_progress:
+                            on_progress(task)
+                        with open(flv_tmp, "wb") as out:
+                            for sp in seg_paths:
+                                with open(sp, "rb") as inp:
+                                    while chunk := inp.read(2**20):
+                                        out.write(chunk)
+                    finally:
+                        for sp in seg_paths:
+                            sp.unlink(missing_ok=True)
+                        if seg_dir.exists():
+                            try:
+                                for f in seg_dir.iterdir():
+                                    f.unlink(missing_ok=True)
+                                seg_dir.rmdir()
+                            except OSError:
+                                pass
+
+                # FLV → MP4 转封装
+                task.progress = progress_start + 0.9 * progress_range
+                if on_progress:
+                    on_progress(task)
+                await asyncio.to_thread(
+                    self._merger.remux_to_mp4, flv_tmp, output_path
+                )
             else:
                 async def dl_video() -> None:
                     def vp(downloaded: int, total: int, speed: float) -> None:
@@ -417,7 +475,7 @@ class BatchDownloader:
                 output_path.unlink(missing_ok=True)
             raise
         finally:
-            for f in [video_tmp, audio_tmp]:
+            for f in [video_tmp, audio_tmp, flv_tmp]:
                 if f.exists():
                     f.unlink(missing_ok=True)
             if temp_dir.exists():

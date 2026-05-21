@@ -10,6 +10,59 @@ from ..exceptions import MergeError
 class VideoMerger:
     """使用 PyAV 合并/拼接媒体流"""
 
+    def remux_to_mp4(self, input_path: Path, output_path: Path) -> None:
+        """将任意格式视频转封装为 MP4（不重编码）"""
+        inp = None
+        out = None
+        try:
+            inp = av.open(str(input_path))
+            out = av.open(str(output_path), "w", format="mp4")
+
+            stream_map = {}
+            for in_stream in inp.streams:
+                if in_stream.type in ("video", "audio"):
+                    out_stream = out.add_stream(in_stream.codec_context.name)
+                    # 复制关键 codec context 参数（不复制 time_base，
+                    # 交由 PyAV 根据 MP4 容器自动设定，避免时间戳错乱）
+                    ctx = in_stream.codec_context
+                    if in_stream.type == "video":
+                        out_stream.width = ctx.width
+                        out_stream.height = ctx.height
+                        if getattr(ctx, "pix_fmt", None) is not None:
+                            out_stream.pix_fmt = ctx.pix_fmt
+                    elif in_stream.type == "audio":
+                        if getattr(ctx, "rate", None) is not None:
+                            out_stream.rate = ctx.rate
+                        if getattr(ctx, "channels", None) is not None:
+                            out_stream.channels = ctx.channels
+                        if getattr(ctx, "layout", None) is not None:
+                            out_stream.layout = ctx.layout
+                    if ctx.extradata:
+                        out_stream.codec_context.extradata = ctx.extradata
+                    stream_map[in_stream.index] = out_stream
+
+            for packet in inp.demux():
+                if packet.dts is None:
+                    continue
+                if packet.stream.index not in stream_map:
+                    continue
+                out_stream = stream_map[packet.stream.index]
+                packet.stream = out_stream
+                out.mux(packet)
+
+        except Exception as e:
+            if out:
+                out.close()
+                out = None
+            if output_path.exists():
+                output_path.unlink(missing_ok=True)
+            raise MergeError(f"转封装失败: {e}") from e
+        finally:
+            if out:
+                out.close()
+            if inp:
+                inp.close()
+
     def merge(
         self,
         video_path: Path,

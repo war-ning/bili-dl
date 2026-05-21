@@ -67,7 +67,7 @@ def load_and_select_videos(
         hide_charge = False
         if charge_count > 0:
             hide_charge = questionary.confirm(
-                "是否隐藏充电专属视频?", default=True
+                "是否隐藏充电专属视频?", default=False
             ).ask()
             if hide_charge is None:
                 return None
@@ -148,10 +148,9 @@ def paginated_select(
         choices.append(
             questionary.Choice(title="--- 全选本页 ---", value="select_all")
         )
-        if total_pages > 1:
-            choices.append(
-                questionary.Choice(title="=== 全选所有页 ===", value="select_all_pages")
-            )
+        choices.append(
+            questionary.Choice(title="=== 全选所有视频 ===", value="select_all_pages")
+        )
         if current_page < total_pages - 1:
             choices.append(
                 questionary.Choice(title=">>> 下一页 >>>", value="next")

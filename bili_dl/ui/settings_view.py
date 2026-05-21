@@ -9,6 +9,7 @@ import questionary
 from rich.console import Console
 from rich.table import Table
 
+from .. import __version__
 from ..config import ConfigManager
 from ..models import AppConfig
 
@@ -43,6 +44,7 @@ def show_settings(config_mgr: ConfigManager) -> None:
         table.add_column("配置项", style="cyan", width=20)
         table.add_column("当前值", width=40)
 
+        table.add_row("版本", f"v{__version__}")
         table.add_row("下载目录", cfg.download_dir)
         table.add_row("最大并发数", str(cfg.max_concurrent))
         table.add_row("画质偏好", _quality_name(cfg.preferred_quality))
@@ -246,6 +248,31 @@ def show_settings(config_mgr: ConfigManager) -> None:
 
 def _configure_cookie(config_mgr: ConfigManager, cfg: AppConfig) -> None:
     """配置 Cookie"""
+    from ..utils.login_helper import qr_login, apply_credential
+
+    action = questionary.select(
+        "Cookie 配置方式:",
+        choices=[
+            questionary.Choice("扫码登录 (推荐)", value="qr"),
+            questionary.Choice("手动输入 Cookie", value="manual"),
+            questionary.Choice("<<< 返回 <<<", value="back"),
+        ],
+    ).ask()
+
+    if action == "back" or action is None:
+        return
+
+    if action == "qr":
+        console.print(
+            "\n[cyan]即将生成二维码，请确保已安装 Bilibili 客户端[/cyan]"
+        )
+        cred = qr_login()
+        if cred:
+            apply_credential(cfg, cred)
+            config_mgr.save(cfg)
+            console.print("[green]Cookie 已保存")
+        return
+
     console.print(
         "\n[cyan]请从浏览器中获取以下 Cookie 值[/cyan]\n"
         "  方法: 登录 bilibili.com → F12 开发者工具 → Application → Cookies\n"

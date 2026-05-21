@@ -57,7 +57,13 @@ async def get_best_streams(
     if not dash:
         durl = data.get("durl", [])
         if durl:
-            return {"url": durl[0]["url"], "type": "flv"}, None
+            urls = [s.get("url", "") for s in durl if s.get("url")]
+            if urls:
+                return {
+                    "url": urls[0],
+                    "urls": urls,
+                    "type": "flv",
+                }, None
         return None, None
 
     # 选最高质量视频流
@@ -121,9 +127,12 @@ async def get_audio_stream(
     # 回退 durl 合流（包含视频+音频，需后续提取音频轨道）
     durl = data.get("durl", [])
     if durl:
-        return {
-            "url": durl[0]["url"],
-            "type": "durl",  # 标记为合流格式
-        }
+        urls = [s.get("url", "") for s in durl if s.get("url")]
+        if urls:
+            return {
+                "url": urls[0],
+                "urls": urls,
+                "type": "durl",
+            }
 
     return None

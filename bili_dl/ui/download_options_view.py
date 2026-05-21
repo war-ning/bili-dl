@@ -61,29 +61,35 @@ def configure_download(
         console.print("[yellow]未选择下载类型")
         return "back"
 
-    # 充电专属视频处理：仅当检测到充电视频且非 charge_only 入口时询问
+    # 充电专属视频处理
+    # 有凭证：直接尝试下载，不再询问（用户已登录，能否下载由 API 侧决定）
+    # 无凭证：询问是否排除
     allow_charge_final = allow_charge
     if not allow_charge:
         charge_videos = [v for v in videos if v.is_charge_plus]
         if charge_videos:
-            remaining = len(videos) - len(charge_videos)
-            ch_action = questionary.select(
-                f"检测到 {len(charge_videos)} 个充电专属视频，如何处理?",
-                choices=[
-                    questionary.Choice(
-                        f"排除充电 (仅下其余 {remaining} 个)", value="exclude",
-                    ),
-                    questionary.Choice(
-                        "仍尝试下载 (需已为该 UP 充电; 未充者仅得试看片段)",
-                        value="keep",
-                    ),
-                    questionary.Choice("<<< 上一步 <<<", value="back"),
-                ],
-            ).ask()
-            if ch_action is None or ch_action == "back":
-                return "back"
-            if ch_action == "keep":
+            if config.sessdata:
+                # 已登录则静默保留，不打断流程
                 allow_charge_final = True
+            else:
+                remaining = len(videos) - len(charge_videos)
+                ch_action = questionary.select(
+                    f"检测到 {len(charge_videos)} 个充电专属视频，如何处理?",
+                    choices=[
+                        questionary.Choice(
+                            "保留充电视频 (需已为该 UP 充电; 未充者仅得试看片段)",
+                            value="keep",
+                        ),
+                        questionary.Choice(
+                            f"排除充电 (仅下其余 {remaining} 个)", value="exclude",
+                        ),
+                        questionary.Choice("<<< 上一步 <<<", value="back"),
+                    ],
+                ).ask()
+                if ch_action is None or ch_action == "back":
+                    return "back"
+                if ch_action == "keep":
+                    allow_charge_final = True
 
     # 封面填充模式：直接使用配置值
     cover_fill_mode = CoverFillMode(config.cover_fill_mode)

@@ -7,6 +7,7 @@ from pathlib import Path
 
 from rich.console import Console
 
+from bili_dl import __version__
 from bili_dl.config import ConfigManager
 from bili_dl.ui.app import main_loop
 from bili_dl.utils.async_helper import cleanup
@@ -35,7 +36,7 @@ def first_run_setup(config_mgr: ConfigManager) -> None:
     """首次运行引导"""
     import questionary
 
-    console.print("\n[bold cyan]欢迎使用 Bili-DL![/bold cyan]\n")
+    console.print(f"\n[bold cyan]欢迎使用 Bili-DL![/bold cyan] [dim]v{__version__}[/dim]\n")
     console.print("首次运行，需要进行基本配置。\n")
 
     cfg = config_mgr.config
@@ -56,12 +57,26 @@ def first_run_setup(config_mgr: ConfigManager) -> None:
         else:
             break
 
-    setup_cookie = questionary.confirm(
+    setup_cookie = questionary.select(
         "是否现在配置 B 站 Cookie? (影响画质上限，可稍后在设置中配置)",
-        default=False,
+        choices=[
+            questionary.Choice("扫码登录 (推荐)", value="qr"),
+            questionary.Choice("手动输入 Cookie", value="manual"),
+            questionary.Choice("跳过，稍后配置", value="skip"),
+        ],
     ).ask()
 
-    if setup_cookie:
+    if setup_cookie == "qr":
+        from bili_dl.utils.login_helper import qr_login, apply_credential
+
+        console.print(
+            "\n[cyan]即将生成二维码，请确保已安装 Bilibili 客户端[/cyan]"
+        )
+        cred = qr_login()
+        if cred:
+            apply_credential(cfg, cred)
+
+    elif setup_cookie == "manual":
         console.print(
             "\n[cyan]请从浏览器中获取 Cookie[/cyan]\n"
             "  方法: 登录 bilibili.com → F12 → Application → Cookies\n"
@@ -87,9 +102,20 @@ def first_run_setup(config_mgr: ConfigManager) -> None:
     console.print("\n[green]配置已保存! 开始使用吧~\n")
 
 
+def _get_data_dir() -> Path:
+    """获取 data 目录路径
+
+    PyInstaller 打包后 __file__ 指向临时解压目录，配置会丢失。
+    因此冻结模式下改用 exe 所在目录。
+    """
+    if getattr(sys, "frozen", False):
+        return Path(sys.executable).resolve().parent / "data"
+    return Path(__file__).resolve().parent / "data"
+
+
 def main() -> None:
     """主入口（同步）"""
-    data_dir = Path(__file__).parent / "data"
+    data_dir = _get_data_dir()
     config_mgr = ConfigManager(str(data_dir))
     cfg = config_mgr.load()
 
@@ -106,6 +132,10 @@ def main() -> None:
 
 
 if __name__ == "__main__":
+    if "--version" in sys.argv or "-V" in sys.argv:
+        print(f"bili-dl v{__version__}")
+        sys.exit(0)
+
     try:
         main()
     except Exception as e:

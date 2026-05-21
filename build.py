@@ -16,6 +16,10 @@ import shutil
 import subprocess
 import sys
 
+# 动态读取版本号
+sys.path.insert(0, os.path.dirname(__file__))
+from bili_dl import __version__
+
 
 def check_dependencies():
     """检查必要依赖是否已安装"""
@@ -41,6 +45,62 @@ def check_dependencies():
     print("依赖检查通过")
 
 
+def _parse_version(v: str) -> tuple[int, int, int, int]:
+    """解析版本字符串 '0.3.0' → (0, 3, 0, 0)"""
+    parts = v.strip().split(".")
+    nums = []
+    for p in parts:
+        try:
+            nums.append(int(p))
+        except ValueError:
+            nums.append(0)
+    while len(nums) < 4:
+        nums.append(0)
+    return tuple(nums[:4])  # type: ignore
+
+
+def _write_version_file(ver: tuple[int, int, int, int]) -> str:
+    """生成 Windows version resource 文件，返回路径"""
+    content = f"""# UTF-8
+VSVersionInfo(
+  ffi=FixedFileInfo(
+    filevers={ver},
+    prodvers={ver},
+    mask=0x3f,
+    flags=0x0,
+    OS=0x40004,
+    fileType=0x1,
+    subtype=0x0,
+    date=(0, 0)
+  ),
+  kids=[
+    StringFileInfo(
+      [
+        StringTable(
+          '080404B0',
+          [
+            StringStruct('CompanyName', 'Bili-DL'),
+            StringStruct('FileDescription', 'Bilibili 视频/音频/封面下载工具'),
+            StringStruct('FileVersion', '{ver[0]}.{ver[1]}.{ver[2]}'),
+            StringStruct('InternalName', 'bili-dl'),
+            StringStruct('LegalCopyright', 'MIT License'),
+            StringStruct('OriginalFilename', 'bili-dl.exe'),
+            StringStruct('ProductName', 'Bili-DL'),
+            StringStruct('ProductVersion', '{ver[0]}.{ver[1]}.{ver[2]}'),
+          ]
+        ),
+      ]
+    ),
+    VarFileInfo([VarStruct('Translation', [0x0804, 0x04B0])]),
+  ]
+)
+"""
+    path = os.path.join(os.path.dirname(__file__) or ".", "version_info.txt")
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(content)
+    return path
+
+
 def main():
     clean = "--clean" in sys.argv
 
@@ -56,11 +116,18 @@ def main():
     check_dependencies()
 
     system = platform.system().lower()
+    ver_tuple = _parse_version(__version__)
+    exe_name = f"bili-dl_v{__version__}"
+
+    # Windows 版本资源文件
+    version_file = None
+    if system == "windows":
+        version_file = _write_version_file(ver_tuple)
 
     cmd = [
         sys.executable, "-m", "PyInstaller",
         "--onefile",
-        "--name", "bili-dl",
+        "--name", exe_name,
         "--console",
         # 收集 bilibili-api-python 的数据文件
         "--collect-all", "bilibili_api",
@@ -74,6 +141,13 @@ def main():
         "--hidden-import", "anyio",
         "--hidden-import", "anyio._backends",
         "--hidden-import", "anyio._backends._asyncio",
+        # 二维码登录依赖
+        "--hidden-import", "qrcode",
+        "--hidden-import", "qrcode_terminal",
+        "--hidden-import", "Cryptodome",
+        "--hidden-import", "bili_dl.utils.login_helper",
+        "--collect-all", "qrcode",
+        "--collect-all", "qrcode_terminal",
     ]
 
     # PyAV: 在不同平台上收集方式不同
@@ -103,9 +177,12 @@ def main():
     except Exception:
         pass
 
+    if version_file:
+        cmd.extend(["--version-file", version_file])
+
     cmd.append("main.py")
 
-    print(f"\n正在打包 ({platform.system()} {platform.machine()})...")
+    print(f"\n正在打包 Bili-DL v{__version__} ({platform.system()} {platform.machine()})...")
     print(f"命令: {' '.join(cmd)}\n")
 
     result = subprocess.run(cmd)
@@ -113,18 +190,18 @@ def main():
         print("\n打包失败!")
         sys.exit(1)
 
-    output = os.path.join("dist", "bili-dl")
-    if system == "windows":
-        output += ".exe"
+    ext = ".exe" if system == "windows" else ""
+    output = os.path.join("dist", f"{exe_name}{ext}")
 
     size_mb = os.path.getsize(output) / (1024 * 1024)
-    print(f"\n打包成功!")
+    print(f"\n打包成功! Bili-DL v{__version__}")
     print(f"  文件: {output}")
     print(f"  大小: {size_mb:.1f} MB")
-    if system != "windows":
-        print(f"\n运行: ./{os.path.basename(output)}")
-    else:
-        print(f"\n运行: {os.path.basename(output)}")
+    print(f"\n运行: {os.path.basename(output)}")
+
+    # 清理临时版本文件
+    if version_file and os.path.exists(version_file):
+        os.remove(version_file)
 
 
 if __name__ == "__main__":

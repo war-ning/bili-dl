@@ -6,6 +6,7 @@ import questionary
 from rich.console import Console
 from rich.panel import Panel
 
+from .. import __version__
 from ..api.client import BiliClient
 from ..config import ConfigManager
 from ..core.downloader import BatchDownloader
@@ -37,7 +38,7 @@ def main_loop(config_mgr: ConfigManager) -> None:
 
         console.print(
             Panel(
-                f"[bold cyan]Bili-DL[/bold cyan] - Bilibili 下载工具\n"
+                f"[bold cyan]Bili-DL[/bold cyan] [dim]v{__version__}[/dim] - Bilibili 下载工具\n"
                 f"认证状态: {auth_status}  "
                 f"下载目录: [dim]{cfg.download_dir}[/dim]",
                 border_style="cyan",
