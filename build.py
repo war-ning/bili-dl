@@ -178,6 +178,11 @@ def main():
     except Exception:
         pass
 
+    # 将 ffmpeg 打入 exe 内部（PyAV mux 有 bug，视频合并依赖 FFmpeg）
+    ffmpeg_src = shutil.which("ffmpeg")
+    if ffmpeg_src:
+        cmd.extend(["--add-binary", f"{ffmpeg_src}{os.pathsep}."])
+
     if version_file:
         cmd.extend(["--version-file", version_file])
 
@@ -203,12 +208,6 @@ def main():
     # 清理临时版本文件
     if version_file and os.path.exists(version_file):
         os.remove(version_file)
-
-    # 将 ffmpeg 打入 exe 内部（PyAV mux 有 bug，视频合并依赖 FFmpeg）
-    ffmpeg_src = shutil.which("ffmpeg")
-    if ffmpeg_src:
-        cmd.insert(-1, "--add-binary")
-        cmd.insert(-1, f"{ffmpeg_src}{os.pathsep}.")
 
 
 if __name__ == "__main__":
